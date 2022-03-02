@@ -1,5 +1,5 @@
 ---
-title: "MPM RWE"
+title: "MPM RWE without feature enginering"
 output: html_document
 ---
 Load packages for project
@@ -398,6 +398,8 @@ lr_res_wfe <-
   control = ctrl_grid,
   metrics = metric
   )
+
+saveRDS(lr_res_wfe, "/users/home/candwei/lr_res_wfe")
 ```
 
 We can print the metrics from the model training using the collect_metrics command.
@@ -482,6 +484,8 @@ rf_res_wfe <-
     control = ctrl_grid,
     metrics = metric
   )
+
+saveRDS(rf_res_wfe, "/users/home/candwei/rf_res_wfe")
 ```
 
 Print the top performing models
@@ -549,6 +553,9 @@ svm_res_wfe <-
     control = ctrl_grid,
     metrics = metric
   )
+
+saveRDS(svm_res_wfe, "/users/home/candwei/svm_res_wfe")
+
 ```
 
 We can print the metrics from the model training using the collect_metrics command.
@@ -619,6 +626,8 @@ svm_r_res_wfe <-
     control = ctrl_grid,
     metrics = metric
   )
+
+saveRDS(svm_r_res_wfe, "/users/home/candwei/svm_r_res_wfe")
 ```
 We can print the metrics from the model training using the collect_metrics command.
 ```{r}
@@ -694,6 +703,9 @@ xgb_res_wfe <-
     control = ctrl_grid,
     metrics = metric
   )
+
+saveRDS(xgb_res_wfe, "/users/home/candwei/xgb_res_wfe")
+
 ```
 
 We can print the metrics from the model training using the collect_metrics command.
@@ -768,6 +780,9 @@ mlp_res_wfe <-
     control = ctrl_grid,
     metrics = metric
   )
+
+saveRDS(mlp_res_wfe, "/users/home/candwei/mlp_res_wfe")
+
 ```
 
 We can print the metrics from the model training using the collect_metrics command.
@@ -839,6 +854,9 @@ nb_res_wfe <-
     control = ctrl_grid,
     metrics = metric
   )
+
+saveRDS(nb_res_wfe, "/users/home/candwei/nb_res_wfe")
+
 ```
 
 ```{r}
@@ -907,6 +925,9 @@ bag_res_wfe <-
     control = ctrl_grid,
     metrics = metric
   )
+
+saveRDS(bag_res_wfe, "/users/home/candwei/bag_res_wfe")
+
 ```
 
 
@@ -979,6 +1000,8 @@ dec_res_wfe <-
     control = ctrl_grid,
     metrics = metric
   )
+
+saveRDS(dec_res_wfe, "/users/home/candwei/dec_res_wfe")
 ```
 
 
@@ -1022,7 +1045,7 @@ mars_mod_wfe <- mars(
       num_terms = tune(),
       prod_degree = tune(),
       prune_method = tune()) %>% 
-  set_engine("earth") %>%
+  set_engine("earth", nfold = 5) %>%
   set_mode("classification")
 
 mars_wflow_wfe <-
@@ -1055,6 +1078,8 @@ mars_res_wfe <-
     control = ctrl_grid,
     metrics = metric
   )
+
+saveRDS(mars_res_wfe, "/users/home/candwei/mars_res_wfe")
 ```
 
 
@@ -1119,7 +1144,7 @@ We can print the most important features used for the prediction using the varia
 # In order to extract the variable importance we need to specify it in set_engine
 rf_final_mod_wfe <- 
   rand_forest(mtry = rf_best_wfe$mtry, min_n = rf_best_wfe$min_n, trees = rf_best_wfe$trees) %>% 
-  set_engine("ranger", num.threads = cores, importance = "impurity") %>% 
+  set_engine("ranger", importance = "impurity") %>% 
   set_mode("classification")
 
 # Create final workflow
@@ -1149,7 +1174,7 @@ svm_final_workflow_wfe <- workflow() %>%
 
 # Last fit
 svm_last_fit_wfe <- last_fit(svm_final_workflow_wfe, split = df_split)
-svm_last_fit %>% collect_metrics()
+svm_last_fit_wfe %>% collect_metrics()
 ```
 
 
@@ -1200,7 +1225,7 @@ xgb_last_fit_wfe %>% collect_metrics()
 # In order to extract the variable importance we need to specify it in set_engine
 mlp_final_mod_wfe <- 
   mlp(hidden_units = mlp_best_wfe$hidden_units, penalty = mlp_best_wfe$penalty, epochs = mlp_best_wfe$epochs) %>% 
-  set_engine("nnet", trace=0) %>% 
+  set_engine("nnet", trace=0,MaxNWts=10000) %>% 
   set_mode("classification")
 
 # Create final workflow
@@ -1361,7 +1386,7 @@ cll_pred_wfe <-
   select(INFEC_after_diag) %>%
   bind_cols(
     predict(
-      cll_st,
+      cll_st_wfe,
       df_test,
       type = "class",
       members = TRUE
@@ -1379,28 +1404,283 @@ map_dfr(
 ```
 
 ## Callibration plots
+
+## EN
 ### extract models from last fit
 ```{r}
-mars_final = mars_last_fit %>%
+lr_final_wfe = lr_last_fit_wfe %>%
   pluck(".workflow", 1)
 
 
-df_mars = bind_cols(
+df_lr_wfe = bind_cols(
   df_test,
-  predict(mars_final, df_test),
-  predict(mars_final, df_test, type="prob")
+  predict(lr_final_wfe, df_test),
+  predict(lr_final_wfe, df_test, type="prob")
 )
 ```
 
 ## calculate Brier score
 ```{r}
-df_mars$bs =  (df_mars$.pred_1 - df_mars$INFEC_after_diag)^2
-mean(df_mars$bs)
+df_lr_wfe$bs =  (df_lr_wfe$.pred_1 - df_lr_wfe$INFEC_after_diag_num)^2
+mean(df_lr_wfe$bs)
 ```
 
 ## create calibration plot
 ```{r}
-mars_cp = classifierplots::calibration_plot(df_mars$INFEC_after_diag, df_mars$.pred_1)
+lr_cp = classifierplots::calibration_plot(df_lr_wfe$INFEC_after_diag, df_lr_wfe$.pred_1)
+lr_cp
+```
+## RF
+### extract models from last fit
+```{r}
+rf_final_wfe = rf_last_fit_wfe %>%
+  pluck(".workflow", 1)
+
+
+df_rf_wfe = bind_cols(
+  df_test,
+  predict(rf_final_wfe, df_test),
+  predict(rf_final_wfe, df_test, type="prob")
+)
+```
+
+## calculate Brier score
+```{r}
+df_rf_wfe$bs =  (df_rf_wfe$.pred_1 - df_rf_wfe$INFEC_after_diag_num)^2
+mean(df_rf_wfe$bs)
+```
+
+## create calibration plot
+```{r}
+rf_cp = classifierplots::calibration_plot(df_rf_wfe$INFEC_after_diag, df_rf_wfe$.pred_1)
+rf_cp
+```
+
+## SVM
+### extract models from last fit
+```{r}
+svm_final_wfe = svm_last_fit_wfe %>%
+  pluck(".workflow", 1)
+
+
+df_svm_wfe = bind_cols(
+  df_test,
+  predict(svm_final_wfe, df_test),
+  predict(svm_final_wfe, df_test, type="prob")
+)
+```
+
+## calculate Brier score
+```{r}
+df_svm_wfe$bs =  (df_svm_wfe$.pred_1 - df_svm_wfe$INFEC_after_diag_num)^2
+mean(df_svm_wfe$bs)
+```
+
+## create calibration plot
+```{r}
+svm_cp = classifierplots::calibration_plot(df_svm_wfe$INFEC_after_diag, df_svm_wfe$.pred_1)
+svm_cp
+```
+## SVM with radient kernel basis
+### extract models from last fit
+```{r}
+svm_r_final_wfe = svm_r_last_fit_wfe %>%
+  pluck(".workflow", 1)
+
+
+df_svm_r_wfe = bind_cols(
+  df_test,
+  predict(svm_r_final_wfe, df_test),
+  predict(svm_r_final_wfe, df_test, type="prob")
+)
+```
+
+## calculate Brier score
+```{r}
+df_svm_r_wfe$bs =  (df_svm_r_wfe$.pred_1 - df_svm_r_wfe$INFEC_after_diag_num)^2
+mean(df_svm_r_wfe$bs)
+```
+
+## create calibration plot
+```{r}
+svm_r_cp = classifierplots::calibration_plot(df_svm_r_wfe$INFEC_after_diag, df_svm_r_wfe$.pred_1)
+svm_r_cp
+```
+
+## xgb
+### extract models from last fit
+```{r}
+xgb_final_wfe = xgb_last_fit_wfe %>%
+  pluck(".workflow", 1)
+
+
+df_xgb_wfe = bind_cols(
+  df_test,
+  predict(xgb_final_wfe, df_test),
+  predict(xgb_final_wfe, df_test, type="prob")
+)
+```
+
+## calculate Brier score
+```{r}
+df_xgb_wfe$bs =  (df_xgb_wfe$.pred_1 - df_xgb_wfe$INFEC_after_diag_num)^2
+mean(df_xgb_wfe$bs)
+```
+
+## create calibration plot
+```{r}
+xgb_cp = classifierplots::calibration_plot(df_xgb_wfe$INFEC_after_diag, df_xgb_wfe$.pred_1)
+xgb_cp
+```
+
+## Naive Bayes
+### extract models from last fit
+```{r}
+nb_final_wfe = nb_last_fit_wfe %>%
+  pluck(".workflow", 1)
+
+
+df_nb_wfe = bind_cols(
+  df_test,
+  predict(nb_final_wfe, df_test),
+  predict(nb_final_wfe, df_test, type="prob")
+)
+```
+
+## calculate Brier score
+```{r}
+df_nb_wfe$bs =  (df_nb_wfe$.pred_1 - df_nb_wfe$INFEC_after_diag_num)^2
+mean(df_nb_wfe$bs)
+```
+
+## create calibration plot
+```{r}
+nb_cp = classifierplots::calibration_plot(df_nb_wfe$INFEC_after_diag, df_nb_wfe$.pred_1)
+nb_cp
+```
+
+## Multilayer perceptron
+### extract models from last fit
+```{r}
+mlp_final_wfe = mlp_last_fit_wfe %>%
+  pluck(".workflow", 1)
+
+
+df_mlp_wfe = bind_cols(
+  df_test,
+  predict(mlp_final_wfe, df_test),
+  predict(mlp_final_wfe, df_test, type="prob")
+)
+```
+
+## calculate Brier score
+```{r}
+df_mlp_wfe$bs =  (df_mlp_wfe$.pred_1 - df_mlp_wfe$INFEC_after_diag_num)^2
+mean(df_mlp_wfe$bs)
+```
+
+## create calibration plot
+```{r}
+mlp_cp = classifierplots::calibration_plot(df_mlp_wfe$INFEC_after_diag, df_mlp_wfe$.pred_1)
+mlp_cp
+```
+
+## Bagged trees
+### extract models from last fit
+```{r}
+bag_final_wfe = bag_last_fit_wfe %>%
+  pluck(".workflow", 1)
+
+
+df_bag_wfe = bind_cols(
+  df_test,
+  predict(bag_final_wfe, df_test),
+  predict(bag_final_wfe, df_test, type="prob")
+)
+```
+
+## calculate Brier score
+```{r}
+df_bag_wfe$bs =  (df_bag_wfe$.pred_1 - df_bag_wfe$INFEC_after_diag_num)^2
+mean(df_bag_wfe$bs)
+```
+
+## create calibration plot
+```{r}
+bag_cp = classifierplots::calibration_plot(df_bag_wfe$INFEC_after_diag, df_bag_wfe$.pred_1)
+bag_cp
+```
+
+## Decision tree
+### extract models from last fit
+```{r}
+dec_final_wfe = dec_last_fit_wfe %>%
+  pluck(".workflow", 1)
+
+
+df_dec_wfe = bind_cols(
+  df_test,
+  predict(dec_final_wfe, df_test),
+  predict(dec_final_wfe, df_test, type="prob")
+)
+```
+
+## calculate Brier score
+```{r}
+df_dec_wfe$bs =  (df_dec_wfe$.pred_1 - df_dec_wfe$INFEC_after_diag_num)^2
+mean(df_dec_wfe$bs)
+```
+
+## create calibration plot
+```{r}
+dec_cp = classifierplots::calibration_plot(df_dec_wfe$INFEC_after_diag, df_dec_wfe$.pred_1)
+dec_cp
+```
+
+## MARS
+### extract models from last fit
+```{r}
+mars_final_wfe = mars_last_fit_wfe %>%
+  pluck(".workflow", 1)
+
+
+df_mars_wfe = bind_cols(
+  df_test,
+  predict(mars_final_wfe, df_test),
+  predict(mars_final_wfe, df_test, type="prob")
+)
+```
+
+## calculate Brier score
+```{r}
+df_mars_wfe$bs =  (df_mars_wfe$.pred_1 - df_mars_wfe$INFEC_after_diag_num)^2
+mean(df_mars_wfe$bs)
+```
+
+## create calibration plot
+```{r}
+mars_cp = classifierplots::calibration_plot(df_mars_wfe$INFEC_after_diag, df_mars_wfe$.pred_1)
 mars_cp
 ```
 
+## EN
+### extract models from last fit
+```{r}
+df_cll_st_wfe = bind_cols(
+  df_test,
+  predict(cll_st_wfe, df_test),
+  predict(cll_st_wfe, df_test, type="prob")
+)
+```
+
+## calculate Brier score
+```{r}
+df_cll_st_wfe$bs =  (df_cll_st_wfe$.pred_1 - df_cll_st_wfe$INFEC_after_diag_num)^2
+mean(df_cll_st_wfe$bs)
+```
+
+## create calibration plot
+```{r}
+cll_st_cp = classifierplots::calibration_plot(df_cll_st_wfe$INFEC_after_diag, df_cll_st_wfe$.pred_1)
+cll_st_cp
+```
