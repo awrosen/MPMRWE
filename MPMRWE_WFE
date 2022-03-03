@@ -1684,3 +1684,38 @@ mean(df_cll_st_wfe$bs)
 cll_st_cp = classifierplots::calibration_plot(df_cll_st_wfe$INFEC_after_diag, df_cll_st_wfe$.pred_1)
 cll_st_cp
 ```
+
+
+lr_clp = classifierplots::classifierplots(df_lr_wfe$INFEC_after_diag, df_lr_wfe$.pred_1)
+lr_clp
+
+rf_clp = classifierplots::classifierplots(df_rf_wfe$INFEC_after_diag, df_rf_wfe$.pred_1)
+rf_clp
+
+svm_clp = classifierplots::classifierplots(df_svm_wfe$INFEC_after_diag, df_svm_wfe$.pred_1)
+svm_clp
+
+svm_r_clp = classifierplots::classifierplots(df_svm_r_wfe$INFEC_after_diag, df_svm_r_wfe$.pred_1)
+svm_r_clp
+
+xgb_clp = classifierplots::classifierplots(df_xgb_wfe$INFEC_after_diag, df_xgb_wfe$.pred_1)
+xgb_clp
+
+nb_clp = classifierplots::classifierplots(df_nb_wfe$INFEC_after_diag, df_nb_wfe$.pred_1)
+nb_clp
+
+mlp_clp = classifierplots::classifierplots(df_mlp_wfe$INFEC_after_diag, df_mlp_wfe$.pred_1)
+mlp_clp
+
+bag_clp = classifierplots::classifierplots(df_bag_wfe$INFEC_after_diag, df_bag_wfe$.pred_1)
+bag_clp
+
+dec_clp = classifierplots::classifierplots(df_dec_wfe$INFEC_after_diag, df_dec_wfe$.pred_1)
+dec_clp
+
+mars_clp = classifierplots::classifierplots(df_mars_wfe$INFEC_after_diag, df_mars_wfe$.pred_1)
+mars_clp
+
+cll_st_clp = classifierplots::classifierplots(df_cll_st_wfe$INFEC_after_diag, df_cll_st_wfe$.pred_1)
+cll_st_clp
+
