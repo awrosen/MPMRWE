@@ -1,0 +1,1435 @@
+---
+title: "MPMRWE - withoutFe-meadianImpute"
+output: html_document
+---
+
+Load packages for project
+```{r setup, include=FALSE}
+options(width = 120)
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+library(tidyverse)
+library(skimr)
+library(tidymodels)
+library(matrixStats)
+library(vip)
+#library(kernlab)
+#library(doParallel)
+library(discrim)
+library(stacks)
+#library(kknn)
+```
+
+
+# Loading data and data curation
+```{r load_data}
+## Synthetic data for analysis
+dfraw <- read_csv("/users/home/candwei/pm_master/cll_tim_compound_infec_n.csv") %>% 
+  rename("id" = "...1") 
+```
+
+```{r}
+df <- dfraw %>% 
+  select(-c(id, Patient_id, INFEC_days_after_diag)) %>% 
+  mutate(INFEC_after_diag_num = INFEC_after_diag) %>%
+  mutate(INFEC_after_diag = factor(INFEC_after_diag, levels = c("1", "0")))
+
+colnames(df)[166:169] <- c("NAT_min","NAT_max","NAT_sd","NAT_mean")
+```
+
+```{r}
+set.seed(42)
+
+# Create random samples of the rows with 20% set aside for testing
+df_split <- df %>% 
+  initial_split(prop = 0.8)
+
+# Extract the datasets
+df_other <- training(df_split)
+df_test  <- testing(df_split)
+
+# For the non testing set we create a 75/25 train/validation split
+# The original data is then split into 60/20/20 proportions for training, validation and testing
+df_val <- vfold_cv(df_other, v = 5)
+```
+
+# Define models
+
+## Set overall recipe
+```{r}
+metric <- metric_set(roc_auc)
+
+ctrl_grid <- control_stack_grid()
+ctrl_res <- control_stack_resamples()
+
+size_grid = 50
+
+cll_rec <-
+  recipe(INFEC_after_diag ~ ., data = df_other) %>%
+  step_rm(INFEC_after_diag_num) %>%
+  step_zv(all_predictors()) %>%           # Remove variables with no variation
+  step_impute_median(all_predictors()) %>%
+  step_normalize(all_predictors())
+  
+cll_wflow <-
+  workflow() %>%
+  add_recipe(cll_rec)
+```
+
+
+## LR
+```{r}
+lr_mod_wfemi <- 
+  logistic_reg(penalty = tune(), mixture = tune()) %>% 
+  set_mode("classification") %>%
+  set_engine("glmnet")
+
+lr_wflow_wfemi <-
+  cll_wflow %>%
+  add_model(lr_mod_wfemi)
+
+lr_params_wfemi <- 
+  dials::parameters(
+    penalty(),
+    mixture()
+  )
+
+lr_grid_wfemi <- 
+  dials::grid_max_entropy(
+    lr_params_wfemi, 
+    size = size_grid
+  )
+
+lr_res_wfemi <- 
+  tune_grid(
+  object = lr_wflow_wfemi,
+  resamples = df_val,
+  grid = lr_grid_wfemi,
+  control = ctrl_grid,
+  metrics = metric
+  )
+
+saveRDS(lr_res_wfemi, "/users/home/candwei/lr_res_wfemi")
+```
+
+We can print the metrics from the model training using the collect_metrics command.
+```{r}
+lr_res_wfemi %>% 
+  collect_metrics()
+```
+
+We can also plot the performance of all the models as a function of the tuning parameters, to get a quick overview.
+```{r}
+autoplot(lr_res_wfemi)
+
+```
+
+We can select the best model, i.e. combination of penalty and mixture with best AUC, by sorting on the mean AUC value, and "slicing" of the first row.
+```{r}
+lr_best_wfemi <- 
+  lr_res_wfemi %>% 
+  collect_metrics() %>% 
+  arrange(-mean) %>% 
+  dplyr::slice(1)
+
+lr_best_wfemi
+
+# Alternatively the sorting and slicing may be done using
+# show_best(lr_res)
+```
+
+Finally we can plot the ROC for the best model
+```{r}
+lr_auc_wfemi <- 
+  lr_res_wfemi %>% 
+  collect_predictions(parameters = lr_best_wfemi) %>% 
+  roc_curve(INFEC_after_diag, .pred_1) %>% 
+  mutate(model = "Elastic Net")
+
+autoplot(lr_auc_wfemi)
+```
+
+## RF
+```{r}
+#cores <- parallel::detectCores()
+rf_mod_wfemi <-
+  rand_forest(
+    mtry = tune(),
+    min_n = tune(),
+    trees = tune(),
+  ) %>% set_mode("classification") %>%
+  set_engine("ranger"#, 
+             #num.threads = cores
+             )
+
+rf_wflow_wfemi <-
+  cll_wflow %>%
+  add_model(rf_mod_wfemi)
+
+cll.mtry = select(df,-INFEC_after_diag)
+finalize(mtry(),cll.mtry)
+
+rf_params_wfemi <- 
+  dials::parameters(
+    dials::mtry(),
+    min_n(),
+    trees()
+  )
+
+rf_params_wfemi <-
+  rf_params_wfemi %>%
+  update(mtry = finalize(mtry(), df %>% select(-INFEC_after_diag)))
+
+rf_grid_wfemi <- 
+  dials::grid_max_entropy(
+    rf_params_wfemi, 
+    size = size_grid
+  )
+
+rf_res_wfemi <- 
+  tune_grid(
+    object = rf_wflow_wfemi, 
+    resamples = df_val, 
+    grid = rf_grid_wfemi,
+    control = ctrl_grid,
+    metrics = metric
+  )
+
+saveRDS(rf_res_wfemi, "/users/home/candwei/rf_res_wfemi")
+```
+
+Print the top performing models
+```{r}
+show_best(rf_res_wfemi)
+```
+
+We can plot the performance against the tuning parameters
+```{r}
+autoplot(rf_res_wfemi)
+```
+
+ROC for the best model
+```{r}
+rf_best_wfemi <- 
+  rf_res_wfemi %>% 
+  collect_metrics() %>% 
+  arrange(-mean) %>% 
+  dplyr::slice(1)
+
+rf_best_wfemi
+
+rf_auc_wfemi <- 
+  rf_res_wfemi %>% 
+  collect_predictions(parameters = rf_best_wfemi) %>% 
+  roc_curve(INFEC_after_diag, .pred_1) %>% 
+  mutate(model = "Random forrest")
+
+autoplot(rf_auc_wfemi)
+```
+
+
+## SVM
+```{r}
+svm_mod_wfemi <-
+  svm_poly(
+    cost  = tune(),
+    degree = tune(),
+  ) %>% set_mode("classification") %>%
+  set_engine("kernlab")
+
+svm_wflow_wfemi <-
+  cll_wflow %>%
+  add_model(svm_mod_wfemi)
+
+
+svm_params_wfemi <- 
+  dials::parameters(
+    cost(),
+    degree()
+  )
+
+svm_grid_wfemi <- 
+  dials::grid_max_entropy(
+    svm_params_wfemi, 
+    size = size_grid
+  )
+svm_grid_wfemi$degree = as.integer(svm_grid_wfemi$degree)
+
+svm_res_wfemi <- 
+  tune_grid(
+    object = svm_wflow_wfemi, 
+    resamples = df_val, 
+    grid = svm_grid_wfemi,
+    control = ctrl_grid,
+    metrics = metric
+  )
+
+saveRDS(svm_res_wfemi, "/users/home/candwei/svm_res_wfemi")
+
+```
+
+We can print the metrics from the model training using the collect_metrics command.
+```{r}
+svm_res_wfemi %>% 
+  collect_metrics()
+```
+
+We can also plot the performance of all the models as a function of the tuning parameters, to get a quick overview.
+```{r}
+autoplot(svm_res_wfemi)
+```
+
+We can select the best model, i.e. combination of penalty and mixture with best AUC, by sorting on the mean AUC value, and "slicing" of the first row.
+```{r}
+svm_best_wfemi <- 
+  svm_res_wfemi %>% 
+  collect_metrics() %>% 
+  arrange(-mean) %>% 
+  dplyr::slice(1)
+
+#svm_best
+show_best(svm_res_wfemi)
+```
+
+Finally we can plot the ROC for the best model
+```{r}
+svm_auc_wfemi <- 
+  svm_res_wfemi %>% 
+  collect_predictions(parameters = svm_best_wfemi) %>% 
+  roc_curve(INFEC_after_diag, .pred_1) %>% 
+  mutate(model = "SVM")
+
+autoplot(svm_auc_wfemi)
+```
+
+## SVM with radial basis
+```{r}
+svm_r_mod_wfemi <-
+  svm_rbf(
+    cost  = tune(),
+    rbf_sigma = tune(),
+  ) %>% set_mode("classification") %>%
+  set_engine("kernlab")
+
+svm_r_wflow_wfemi <-
+  cll_wflow %>%
+  add_model(svm_r_mod_wfemi)
+
+
+svm_r_params_wfemi <- 
+  dials::parameters(
+    cost(),
+    rbf_sigma()
+  )
+
+svm_r_grid_wfemi <- 
+  dials::grid_max_entropy(
+    svm_r_params_wfemi, 
+    size = size_grid
+  )
+
+svm_r_res_wfemi <- 
+  tune_grid(
+    object = svm_r_wflow_wfemi, 
+    resamples = df_val, 
+    grid = svm_r_grid_wfemi,
+    control = ctrl_grid,
+    metrics = metric
+  )
+
+saveRDS(svm_r_res_wfemi, "/users/home/candwei/svm_r_res_wfemi")
+```
+We can print the metrics from the model training using the collect_metrics command.
+```{r}
+svm_r_res_wfemi %>% 
+  collect_metrics()
+```
+
+We can also plot the performance of all the models as a function of the tuning parameters, to get a quick overview.
+```{r}
+autoplot(svm_r_res_wfemi)
+```
+
+We can select the best model, i.e. combination of penalty and mixture with best AUC, by sorting on the mean AUC value, and "slicing" of the first row.
+```{r}
+svm_r_best_wfemi <- 
+  svm_r_res_wfemi %>% 
+  collect_metrics() %>% 
+  arrange(-mean) %>% 
+  dplyr::slice(1)
+
+#s best svm_r
+show_best(svm_r_res_wfemi)
+```
+
+Finally we can plot the ROC for the best model
+```{r}
+svm_r_auc_wfemi <- 
+  svm_r_res_wfemi %>% 
+  collect_predictions(parameters = svm_r_best_wfemi) %>% 
+  roc_curve(INFEC_after_diag, .pred_1) %>% 
+  mutate(model = "SVM radial")
+
+autoplot(svm_r_auc_wfemi)
+```
+
+## extrem gradient boost
+```{r}
+xgb_mod_wfemi <-
+  boost_tree(
+    trees = tune(),
+    min_n = tune(),
+    tree_depth = tune(),
+    learn_rate = tune(),
+    loss_reduction = tune()) %>% 
+  set_engine("xgboost") %>%
+  set_mode("classification")
+
+xgb_wflow_wfemi <-
+  cll_wflow %>%
+  add_model(xgb_mod_wfemi)
+
+
+xgb_params_wfemi <- 
+  dials::parameters(
+    trees(),
+    min_n(),
+    tree_depth(),
+    learn_rate(),
+    loss_reduction()
+  )
+
+xgb_grid_wfemi <- 
+  dials::grid_max_entropy(
+    xgb_params_wfemi, 
+    size = size_grid
+  )
+
+xgb_res_wfemi <- 
+  tune_grid(
+    object = xgb_wflow_wfemi, 
+    resamples = df_val, 
+    grid = xgb_grid_wfemi,
+    control = ctrl_grid,
+    metrics = metric
+  )
+
+saveRDS(xgb_res_wfemi, "/users/home/candwei/xgb_res_wfemi")
+
+```
+
+We can print the metrics from the model training using the collect_metrics command.
+```{r}
+xgb_res_wfemi %>% 
+  collect_metrics()
+```
+
+We can also plot the performance of all the models as a function of the tuning parameters, to get a quick overview.
+```{r}
+autoplot(xgb_res_wfemi)
+```
+
+We can select the best model, i.e. combination of penalty and mixture with best AUC, by sorting on the mean AUC value, and "slicing" of the first row.
+```{r}
+xgb_best_wfemi <- 
+  xgb_res_wfemi %>% 
+  collect_metrics() %>% 
+  arrange(-mean) %>% 
+  dplyr::slice(1)
+
+#svm_best
+show_best(xgb_res_wfemi)
+```
+
+Finally we can plot the ROC for the best model
+```{r}
+xgb_auc_wfemi <- 
+  xgb_res_wfemi %>% 
+  collect_predictions(parameters = xgb_best_wfemi) %>% 
+  roc_curve(INFEC_after_diag, .pred_1) %>% 
+  mutate(model = "xgboost")
+
+autoplot(xgb_auc_wfemi)
+```
+
+
+## Multilayer perceptron
+```{r}
+mlp_mod_wfemi <- 
+    mlp(
+      hidden_units = tune(),
+      penalty = tune(),
+      epochs = tune()
+      ) %>% 
+  set_engine("nnet", trace = 0,MaxNWts=10000) %>% 
+  set_mode("classification")
+
+mlp_wflow_wfemi <-
+  cll_wflow %>%
+  add_model(mlp_mod_wfemi)
+
+
+mlp_params_wfemi <- 
+  dials::parameters(
+    hidden_units(),
+    penalty(),
+    epochs()
+  )
+
+mlp_grid_wfemi <- 
+  dials::grid_max_entropy(
+    mlp_params_wfemi, 
+    size = size_grid
+  )
+
+mlp_res_wfemi <- 
+  tune_grid(
+    object = mlp_wflow_wfemi, 
+    resamples = df_val, 
+    grid = mlp_grid_wfemi,
+    control = ctrl_grid,
+    metrics = metric
+  )
+
+saveRDS(mlp_res_wfemi, "/users/home/candwei/mlp_res_wfemi")
+
+```
+
+We can print the metrics from the model training using the collect_metrics command.
+```{r}
+mlp_res_wfemi %>% 
+  collect_metrics()
+```
+
+We can also plot the performance of all the models as a function of the tuning parameters, to get a quick overview.
+```{r}
+autoplot(mlp_res_wfemi)
+```
+
+We can select the best model, i.e. combination of penalty and mixture with best AUC, by sorting on the mean AUC value, and "slicing" of the first row.
+```{r}
+mlp_best_wfemi <- 
+  mlp_res_wfemi %>% 
+  collect_metrics() %>% 
+  arrange(-mean) %>% 
+  dplyr::slice(1)
+
+#mlp_best
+show_best(mlp_res_wfemi)
+```
+
+Finally we can plot the ROC for the best model
+```{r}
+mlp_auc_wfemi <- 
+  mlp_res_wfemi %>% 
+  collect_predictions(parameters = mlp_best_wfemi) %>% 
+  roc_curve(INFEC_after_diag, .pred_1) %>% 
+  mutate(model = "Multilayer Perceptron")
+
+autoplot(mlp_auc_wfemi)
+```
+
+## Naive Bayes
+```{r}
+nb_mod_wfemi <- 
+  naive_Bayes(
+    smoothness = tune(),
+    Laplace = tune()
+    ) %>% 
+  set_engine("naivebayes") %>%
+  set_mode("classification")
+
+nb_wflow_wfemi <-
+  cll_wflow %>%
+  add_model(nb_mod_wfemi)
+
+
+nb_params_wfemi <- 
+  dials::parameters(
+    smoothness(),
+    Laplace()
+  )
+
+nb_grid_wfemi <- 
+  dials::grid_max_entropy(
+    nb_params_wfemi, 
+    size = size_grid
+  )
+
+nb_res_wfemi <- 
+  tune_grid(
+    object = nb_wflow_wfemi, 
+    resamples = df_val, 
+    grid = nb_grid_wfemi,
+    control = ctrl_grid,
+    metrics = metric
+  )
+
+saveRDS(nb_res_wfemi, "/users/home/candwei/nb_res_wfemi")
+
+```
+
+```{r}
+nb_res_wfemi %>% 
+  collect_metrics()
+```
+
+We can also plot the performance of all the models as a function of the tuning parameters, to get a quick overview.
+```{r}
+autoplot(nb_res_wfemi)
+```
+
+We can select the best model, i.e. combination of penalty and mixture with best AUC, by sorting on the mean AUC value, and "slicing" of the first row.
+```{r}
+nb_best_wfemi <- 
+  nb_res_wfemi %>% 
+  collect_metrics() %>% 
+  arrange(-mean) %>% 
+  dplyr::slice(1)
+
+show_best(nb_res_wfemi)
+```
+
+Finally we can plot the ROC for the best model
+```{r}
+nb_auc_wfemi <- 
+  nb_res_wfemi %>% 
+  collect_predictions(parameters = nb_best_wfemi) %>% 
+  roc_curve(INFEC_after_diag, .pred_1) %>% 
+  mutate(model = "naive Bayes")
+
+autoplot(nb_auc_wfemi)
+```
+
+# Bagged tree
+```{r}
+bag_mod_wfemi <- 
+  baguette::bag_tree(
+           min_n = tune(),
+           class_cost = tune()) %>% 
+  set_engine("C5.0") %>%
+  set_mode("classification")
+
+bag_wflow_wfemi <-
+  cll_wflow %>%
+  add_model(bag_mod_wfemi)
+
+
+bag_params_wfemi <- 
+  dials::parameters(
+    min_n(),
+    baguette::class_cost()
+  )
+
+bag_grid_wfemi <- 
+  dials::grid_max_entropy(
+    bag_params_wfemi, 
+    size = size_grid
+  )
+
+bag_res_wfemi <- 
+  tune_grid(
+    object = bag_wflow_wfemi, 
+    resamples = df_val, 
+    grid = bag_grid_wfemi,
+    control = ctrl_grid,
+    metrics = metric
+  )
+
+saveRDS(bag_res_wfemi, "/users/home/candwei/bag_res_wfemi")
+
+```
+
+
+We can print the metrics from the model training using the collect_metrics command.
+```{r}
+bag_res_wfemi %>%
+  collect_metrics()
+```
+
+We can also plot the performance of all the models as a function of the tuning parameters, to get a quick overview.
+```{r}
+autoplot(bag_res_wfemi)
+```
+
+We can select the best model, i.e. combination of penalty and mixture with best AUC, by sorting on the mean AUC value, and "slicing" of the first row.
+```{r}
+bag_best_wfemi <- 
+  bag_res_wfemi %>% 
+  collect_metrics() %>% 
+  arrange(-mean) %>% 
+  dplyr::slice(1)
+
+#bag best
+show_best(bag_res_wfemi)
+```
+
+Finally we can plot the ROC for the best model
+```{r}
+bag_auc_wfemi <- 
+  bag_res_wfemi %>% 
+  collect_predictions(parameters = bag_best_wfemi) %>% 
+  roc_curve(INFEC_after_diag, .pred_1) %>% 
+  mutate(model = "Bagged trees")
+
+autoplot(bag_auc_wfemi)
+```
+# decision tree
+```{r}
+dec_mod_wfemi <- 
+  decision_tree(
+           min_n = tune(),
+           cost_complexity = tune(),
+           tree_depth = tune()) %>% 
+  set_engine("rpart") %>%
+  set_mode("classification")
+
+dec_wflow_wfemi <-
+  cll_wflow %>%
+  add_model(dec_mod_wfemi)
+
+
+dec_params_wfemi <- 
+  dials::parameters(
+    min_n(),
+    cost_complexity(),
+    tree_depth()
+  )
+
+dec_grid_wfemi <- 
+  dials::grid_max_entropy(
+    dec_params_wfemi, 
+    size = size_grid
+  )
+
+dec_res_wfemi <- 
+  tune_grid(
+    object = dec_wflow_wfemi, 
+    resamples = df_val, 
+    grid = dec_grid_wfemi,
+    control = ctrl_grid,
+    metrics = metric
+  )
+
+saveRDS(dec_res_wfemi, "/users/home/candwei/dec_res_wfemi")
+```
+
+
+We can print the metrics from the model training using the collect_metrics command.
+```{r}
+dec_res_wfemi %>%
+  collect_metrics()
+```
+
+We can also plot the performance of all the models as a function of the tuning parameters, to get a quick overview.
+```{r}
+autoplot(dec_res_wfemi)
+```
+
+We can select the best model, i.e. combination of penalty and mixture with best AUC, by sorting on the mean AUC value, and "slicing" of the first row.
+```{r}
+dec_best_wfemi <- 
+  dec_res_wfemi %>% 
+  collect_metrics() %>% 
+  arrange(-mean) %>% 
+  dplyr::slice(1)
+
+#bag best
+show_best(dec_res_wfemi)
+```
+
+Finally we can plot the ROC for the best model
+```{r}
+dec_auc_wfemi <- 
+  dec_res_wfemi %>% 
+  collect_predictions(parameters = dec_best_wfemi) %>% 
+  roc_curve(INFEC_after_diag, .pred_1) %>% 
+  mutate(model = "Decision tree")
+
+autoplot(dec_auc_wfemi)
+```
+
+# Multivariate adaptive regression splines
+```{r}
+mars_mod_wfemi <- mars(
+      num_terms = tune(),
+      prod_degree = tune(),
+      prune_method = tune()) %>% 
+  set_engine("earth", nfold = 5) %>%
+  set_mode("classification")
+
+mars_wflow_wfemi <-
+  cll_wflow %>%
+  add_model(mars_mod_wfemi)
+
+
+mars_params_wfemi <- 
+  dials::parameters(
+    num_terms(),
+    prod_degree(),
+    prune_method()
+  )
+
+mars_params_wfemi <-
+  mars_params_wfemi %>%
+  update(num_terms = finalize(num_terms(), df %>% select(-INFEC_after_diag)))
+
+mars_grid_wfemi <- 
+  dials::grid_max_entropy(
+    mars_params_wfemi, 
+    size = size_grid
+  )
+
+mars_grid_wfemi$num_terms = as.numeric(mars_grid_wfemi$num_terms)
+mars_grid_wfemi$prod_degree = as.numeric(mars_grid_wfemi$prod_degree)
+
+
+mars_res_wfemi <- 
+  tune_grid(
+    object = mars_wflow_wfemi, 
+    resamples = df_val, 
+    grid = mars_grid_wfemi,
+    control = ctrl_grid,
+    metrics = metric
+  )
+
+saveRDS(mars_res_wfemi, "/users/home/candwei/mars_res_wfemi")
+```
+
+
+We can print the metrics from the model training using the collect_metrics command.
+```{r}
+mars_res_wfemi %>%
+  collect_metrics()
+```
+
+We can also plot the performance of all the models as a function of the tuning parameters, to get a quick overview.
+```{r}
+autoplot(mars_res_wfemi)
+```
+
+We can select the best model, i.e. combination of penalty and mixture with best AUC, by sorting on the mean AUC value, and "slicing" of the first row.
+```{r}
+mars_best_wfemi <- 
+  mars_res_wfemi %>% 
+  collect_metrics() %>% 
+  arrange(-mean) %>% 
+  dplyr::slice(1)
+
+#bag best
+show_best(mars_res_wfemi)
+```
+
+Finally we can plot the ROC for the best model
+```{r}
+mars_auc_wfemi <- 
+  mars_res_wfemi %>% 
+  collect_predictions(parameters = mars_best_wfemi) %>% 
+  roc_curve(INFEC_after_diag, .pred_1) %>% 
+  mutate(model = "Multivariate adaptive regression splines")
+
+autoplot(mars_auc_wfemi)
+```
+
+# Last model
+This section demonstrates how to retrain the model on the combined training and validation set, using the optimal tuning parameters, and evaluating the performance on the test set.
+
+## LR
+```{r}
+# Create model with best parameter
+lr_final_mod_wfemi <- logistic_reg(penalty = lr_best_wfemi$penalty, mixture = lr_best_wfemi$mixture) %>% 
+  set_engine("glmnet")
+
+# Create final workflow
+lr_final_workflow_wfemi <- workflow() %>% 
+ add_model(lr_final_mod_wfemi) %>% 
+  add_recipe(cll_rec)
+
+# Last fit
+lr_last_fit_wfemi <- last_fit(lr_final_workflow_wfemi, split = df_split)
+lr_last_fit_wfemi %>% collect_metrics()
+```
+
+We can print the most important features used for the prediction using the variable importance function. Vip depends on the type of model, so we include the type of variable importance score. For the EN model, which is a paramatric model, we get the model coefficients.
+
+## RF
+```{r}
+# Create model with best parameter
+# In order to extract the variable importance we need to specify it in set_engine
+rf_final_mod_wfemi <- 
+  rand_forest(mtry = rf_best_wfemi$mtry, min_n = rf_best_wfemi$min_n, trees = rf_best_wfemi$trees) %>% 
+  set_engine("ranger", importance = "impurity") %>% 
+  set_mode("classification")
+
+# Create final workflow
+rf_final_workflow_wfemi <- workflow() %>% 
+ add_model(rf_final_mod_wfemi) %>% 
+  add_recipe(cll_rec)
+
+# Last fit
+rf_last_fit_wfemi <- last_fit(rf_final_workflow_wfemi, split = df_split)
+rf_last_fit_wfemi %>% collect_metrics()
+```
+
+
+## SVM
+```{r}
+# Create model with best parameter
+# In order to extract the variable importance we need to specify it in set_engine
+svm_final_mod_wfemi <- 
+  svm_poly(cost = svm_best_wfemi$cost, degree = svm_best_wfemi$degree) %>% 
+  set_engine("kernlab") %>% 
+  set_mode("classification")
+
+# Create final workflow
+svm_final_workflow_wfemi <- workflow() %>% 
+  add_model(svm_final_mod_wfemi) %>% 
+  add_recipe(cll_rec)
+
+# Last fit
+svm_last_fit_wfemi <- last_fit(svm_final_workflow_wfemi, split = df_split)
+svm_last_fit_wfemi %>% collect_metrics()
+```
+
+
+
+## SVM with radial basis
+```{r}
+# Create model with best parameter
+# In order to extract the variable importance we need to specify it in set_engine
+svm_r_final_mod_wfemi <- 
+  svm_rbf(cost = svm_r_best_wfemi$cost, rbf_sigma = svm_r_best_wfemi$rbf_sigma) %>% 
+  set_engine("kernlab") %>% 
+  set_mode("classification")
+
+# Create final workflow
+svm_r_final_workflow_wfemi <- workflow() %>% 
+ add_model(svm_r_final_mod_wfemi) %>% 
+  add_recipe(cll_rec)
+
+# Last fit
+svm_r_last_fit_wfemi <- last_fit(svm_r_final_workflow_wfemi, split = df_split)
+svm_r_last_fit_wfemi %>% collect_metrics()
+```
+
+
+## XGBOOSTING
+```{r}
+# Create model with best parameter
+# In order to extract the variable importance we need to specify it in set_engine
+xgb_final_mod_wfemi <- 
+  boost_tree(min_n = xgb_best_wfemi$min_n,tree_depth = xgb_best_wfemi$tree_depth, learn_rate = xgb_best_wfemi$learn_rate,loss_reduction = xgb_best_wfemi$loss_reduction, trees=xgb_best_wfemi$trees) %>% 
+  set_engine("xgboost") %>% 
+  set_mode("classification")
+
+# Create final workflow
+xgb_final_workflow_wfemi <- workflow() %>% 
+ add_model(xgb_final_mod_wfemi) %>% 
+  add_recipe(cll_rec)
+
+# Last fit
+xgb_last_fit_wfemi <- last_fit(xgb_final_workflow_wfemi, split = df_split)
+xgb_last_fit_wfemi %>% collect_metrics()
+```
+
+
+## mlp
+```{r}
+# Create model with best parameter
+# In order to extract the variable importance we need to specify it in set_engine
+mlp_final_mod_wfemi <- 
+  mlp(hidden_units = mlp_best_wfemi$hidden_units, penalty = mlp_best_wfemi$penalty, epochs = mlp_best_wfemi$epochs) %>% 
+  set_engine("nnet", trace=0,MaxNWts=10000) %>% 
+  set_mode("classification")
+
+# Create final workflow
+mlp_final_workflow_wfemi <- workflow() %>% 
+ add_model(mlp_final_mod_wfemi) %>% 
+  add_recipe(cll_rec)
+
+# Last fit
+mlp_last_fit_wfemi <- last_fit(mlp_final_workflow_wfemi, split = df_split)
+mlp_last_fit_wfemi %>% collect_metrics()
+```
+
+##Bagged trees
+```{r}
+# Create model with best parameter
+# In order to extract the variable importance we need to specify it in set_engine
+bag_final_mod_wfemi <- 
+   baguette::bag_tree(
+           min_n = bag_best_wfemi$min_n,
+           class_cost = bag_best_wfemi$class_cost)%>% 
+  set_engine("C5.0") %>% 
+  set_mode("classification")
+
+
+# Create final workflow
+bag_final_workflow_wfemi <- workflow() %>% 
+ add_model(bag_final_mod_wfemi) %>% 
+  add_recipe(cll_rec)
+
+# Last fit
+bag_last_fit_wfemi <- last_fit(bag_final_workflow_wfemi, split = df_split)
+bag_last_fit_wfemi %>% collect_metrics()
+```
+
+
+## Naive Bayes
+```{r}
+# Create model with best parameter
+# In order to extract the variable importance we need to specify it in set_engine
+nb_final_mod_wfemi <- 
+  naive_Bayes(smoothness = nb_best_wfemi$smoothness, Laplace = nb_best_wfemi$Laplace) %>% 
+  set_engine("naivebayes") %>% 
+  set_mode("classification")
+
+
+# Create final workflow
+nb_final_workflow_wfemi <- workflow() %>% 
+ add_model(nb_final_mod_wfemi) %>% 
+  add_recipe(cll_rec)
+
+# Last fit
+nb_last_fit_wfemi <- last_fit(nb_final_workflow_wfemi, split = df_split)
+nb_last_fit_wfemi %>% collect_metrics()
+```
+
+
+## Decision tree
+```{r}
+# Create model with best parameter
+# In order to extract the variable importance we need to specify it in set_engine
+dec_final_mod_wfemi <- 
+  decision_tree(
+    min_n = dec_best_wfemi$min_n,
+    cost_complexity = dec_best_wfemi$cost_complexity,
+    tree_depth = dec_best_wfemi$tree_depth) %>% 
+  set_engine("rpart") %>% 
+  set_mode("classification")
+
+# Create final workflow
+dec_final_workflow_wfemi <- workflow() %>% 
+ add_model(dec_final_mod_wfemi) %>% 
+  add_recipe(cll_rec)
+
+# Last fit
+dec_last_fit_wfemi <- last_fit(dec_final_workflow_wfemi, split = df_split)
+dec_last_fit_wfemi %>% collect_metrics()
+```
+
+## MARS
+```{r}
+# Create model with best parameter
+# In order to extract the variable importance we need to specify it in set_engine
+mars_final_mod_wfemi <- 
+  mars(
+    num_terms = mars_best_wfemi$num_terms,
+    prune_method = mars_best_wfemi$prune_method,
+    prod_degree = mars_best_wfemi$prod_degree) %>% 
+  set_engine("earth") %>% 
+  set_mode("classification")
+
+# Create final workflow
+mars_final_workflow_wfemi <- workflow() %>% 
+ add_model(mars_final_mod_wfemi) %>% 
+  add_recipe(cll_rec)
+
+# Last fit
+mars_last_fit_wfemi <- last_fit(mars_final_workflow_wfemi, split = df_split)
+mars_last_fit_wfemi %>% collect_metrics()
+```
+
+# Create stack
+## Create stack
+```{r}
+cll_st_wfemi <- 
+  stacks() %>%
+  add_candidates(lr_res_wfemi) %>%
+  add_candidates(rf_res_wfemi) %>%
+  add_candidates(svm_res_wfemi) %>%
+  add_candidates(svm_r_res_wfemi) %>%
+  add_candidates(xgb_res_wfemi) %>%
+  add_candidates(nb_res_wfemi) %>%
+  add_candidates(mlp_res_wfemi) %>%
+  add_candidates(bag_res_wfemi) %>%
+  add_candidates(dec_res_wfemi) %>%
+  add_candidates(mars_res_wfemi) %>%
+  blend_predictions() %>%
+  fit_members()
+
+saveRDS(cll_st_wfemi, "/users/home/candwei/cll_st_wfemi")
+```
+
+## Visualize trade-off between number of members and performance
+```{r}
+autoplot(cll_st_wfemi)
+```
+
+## Other visualization showing trade-off vs performance
+```{r}
+autoplot(cll_st_wfemi, type = "members")
+```
+
+## Look at penalty 
+```{r}
+autoplot(cll_st_wfemi, type="weights")
+```
+
+## Check parameters
+```{r}
+collect_parameters(cll_st_wfemi,"lr_res_wfemi")
+```
+
+## Predicting new data
+```{r}
+cll_pred_wfemi <-
+  df_test %>%
+  bind_cols(predict(cll_st_wfemi,.,type = "prob"))
+  
+yardstick::roc_auc(
+  cll_pred_wfemi,
+  truth = INFEC_after_diag,
+  contains(".pred_1")
+)
+```
+
+## compare with individual models
+```{r}
+cll_pred_wfemi <-
+  df_test %>%
+  select(INFEC_after_diag) %>%
+  bind_cols(
+    predict(
+      cll_st_wfemi,
+      df_test,
+      type = "class",
+      members = TRUE
+    )
+  )
+```
+
+## compare members with total
+```{r}
+map_dfr(
+  setNames(colnames(cll_pred_wfemi),colnames(cll_pred_wfemi)),
+  ~mean(cll_pred_wfemi$INFEC_after_diag == pull(cll_pred_wfemi, .x))
+) %>%
+  pivot_longer(c(everything(),-INFEC_after_diag))
+```
+
+## Callibration plots
+
+## EN
+### extract models from last fit
+```{r}
+lr_final_wfemi = lr_last_fit_wfemi %>%
+  pluck(".workflow", 1)
+
+
+df_lr_wfemi = bind_cols(
+  df_test,
+  predict(lr_final_wfemi, df_test),
+  predict(lr_final_wfemi, df_test, type="prob")
+)
+```
+
+## calculate Brier score
+```{r}
+df_lr_wfemi$bs =  (df_lr_wfemi$.pred_1 - df_lr_wfemi$INFEC_after_diag_num)^2
+mean(df_lr_wfemi$bs)
+```
+
+## create calibration plot
+```{r}
+lr_cp = classifierplots::calibration_plot(df_lr_wfemi$INFEC_after_diag, df_lr_wfemi$.pred_1)
+lr_cp
+```
+## RF
+### extract models from last fit
+```{r}
+rf_final_wfemi = rf_last_fit_wfemi %>%
+  pluck(".workflow", 1)
+
+
+df_rf_wfemi = bind_cols(
+  df_test,
+  predict(rf_final_wfemi, df_test),
+  predict(rf_final_wfemi, df_test, type="prob")
+)
+```
+
+## calculate Brier score
+```{r}
+df_rf_wfemi$bs =  (df_rf_wfemi$.pred_1 - df_rf_wfemi$INFEC_after_diag_num)^2
+mean(df_rf_wfemi$bs)
+```
+
+## create calibration plot
+```{r}
+rf_cp = classifierplots::calibration_plot(df_rf_wfemi$INFEC_after_diag, df_rf_wfemi$.pred_1)
+rf_cp
+```
+
+## SVM
+### extract models from last fit
+```{r}
+svm_final_wfemi = svm_last_fit_wfemi %>%
+  pluck(".workflow", 1)
+
+
+df_svm_wfemi = bind_cols(
+  df_test,
+  predict(svm_final_wfemi, df_test),
+  predict(svm_final_wfemi, df_test, type="prob")
+)
+```
+
+## calculate Brier score
+```{r}
+df_svm_wfemi$bs =  (df_svm_wfemi$.pred_1 - df_svm_wfemi$INFEC_after_diag_num)^2
+mean(df_svm_wfemi$bs)
+```
+
+## create calibration plot
+```{r}
+svm_cp = classifierplots::calibration_plot(df_svm_wfemi$INFEC_after_diag, df_svm_wfemi$.pred_1)
+svm_cp
+```
+## SVM with radient kernel basis
+### extract models from last fit
+```{r}
+svm_r_final_wfemi = svm_r_last_fit_wfemi %>%
+  pluck(".workflow", 1)
+
+
+df_svm_r_wfemi = bind_cols(
+  df_test,
+  predict(svm_r_final_wfemi, df_test),
+  predict(svm_r_final_wfemi, df_test, type="prob")
+)
+```
+
+## calculate Brier score
+```{r}
+df_svm_r_wfemi$bs =  (df_svm_r_wfemi$.pred_1 - df_svm_r_wfemi$INFEC_after_diag_num)^2
+mean(df_svm_r_wfemi$bs)
+```
+
+## create calibration plot
+```{r}
+svm_r_cp = classifierplots::calibration_plot(df_svm_r_wfemi$INFEC_after_diag, df_svm_r_wfemi$.pred_1)
+svm_r_cp
+```
+
+## xgb
+### extract models from last fit
+```{r}
+xgb_final_wfemi = xgb_last_fit_wfemi %>%
+  pluck(".workflow", 1)
+
+
+df_xgb_wfemi = bind_cols(
+  df_test,
+  predict(xgb_final_wfemi, df_test),
+  predict(xgb_final_wfemi, df_test, type="prob")
+)
+```
+
+## calculate Brier score
+```{r}
+df_xgb_wfemi$bs =  (df_xgb_wfemi$.pred_1 - df_xgb_wfemi$INFEC_after_diag_num)^2
+mean(df_xgb_wfemi$bs)
+```
+
+## create calibration plot
+```{r}
+xgb_cp = classifierplots::calibration_plot(df_xgb_wfemi$INFEC_after_diag, df_xgb_wfemi$.pred_1)
+xgb_cp
+```
+
+## Naive Bayes
+### extract models from last fit
+```{r}
+nb_final_wfemi = nb_last_fit_wfemi %>%
+  pluck(".workflow", 1)
+
+
+df_nb_wfemi = bind_cols(
+  df_test,
+  predict(nb_final_wfemi, df_test),
+  predict(nb_final_wfemi, df_test, type="prob")
+)
+```
+
+## calculate Brier score
+```{r}
+df_nb_wfemi$bs =  (df_nb_wfemi$.pred_1 - df_nb_wfemi$INFEC_after_diag_num)^2
+mean(df_nb_wfemi$bs)
+```
+
+## create calibration plot
+```{r}
+nb_cp = classifierplots::calibration_plot(df_nb_wfemi$INFEC_after_diag, df_nb_wfemi$.pred_1)
+nb_cp
+```
+
+## Multilayer perceptron
+### extract models from last fit
+```{r}
+mlp_final_wfemi = mlp_last_fit_wfemi %>%
+  pluck(".workflow", 1)
+
+
+df_mlp_wfemi = bind_cols(
+  df_test,
+  predict(mlp_final_wfemi, df_test),
+  predict(mlp_final_wfemi, df_test, type="prob")
+)
+```
+
+## calculate Brier score
+```{r}
+df_mlp_wfemi$bs =  (df_mlp_wfemi$.pred_1 - df_mlp_wfemi$INFEC_after_diag_num)^2
+mean(df_mlp_wfemi$bs)
+```
+
+## create calibration plot
+```{r}
+mlp_cp = classifierplots::calibration_plot(df_mlp_wfemi$INFEC_after_diag, df_mlp_wfemi$.pred_1)
+mlp_cp
+```
+
+## Bagged trees
+### extract models from last fit
+```{r}
+bag_final_wfemi = bag_last_fit_wfemi %>%
+  pluck(".workflow", 1)
+
+
+df_bag_wfemi = bind_cols(
+  df_test,
+  predict(bag_final_wfemi, df_test),
+  predict(bag_final_wfemi, df_test, type="prob")
+)
+```
+
+## calculate Brier score
+```{r}
+df_bag_wfemi$bs =  (df_bag_wfemi$.pred_1 - df_bag_wfemi$INFEC_after_diag_num)^2
+mean(df_bag_wfemi$bs)
+```
+
+## create calibration plot
+```{r}
+bag_cp = classifierplots::calibration_plot(df_bag_wfemi$INFEC_after_diag, df_bag_wfemi$.pred_1)
+bag_cp
+```
+
+## Decision tree
+### extract models from last fit
+```{r}
+dec_final_wfemi = dec_last_fit_wfemi %>%
+  pluck(".workflow", 1)
+
+
+df_dec_wfemi = bind_cols(
+  df_test,
+  predict(dec_final_wfemi, df_test),
+  predict(dec_final_wfemi, df_test, type="prob")
+)
+```
+
+## calculate Brier score
+```{r}
+df_dec_wfemi$bs =  (df_dec_wfemi$.pred_1 - df_dec_wfemi$INFEC_after_diag_num)^2
+mean(df_dec_wfemi$bs)
+```
+
+## create calibration plot
+```{r}
+dec_cp = classifierplots::calibration_plot(df_dec_wfemi$INFEC_after_diag, df_dec_wfemi$.pred_1)
+dec_cp
+```
+
+## MARS
+### extract models from last fit
+```{r}
+mars_final_wfemi = mars_last_fit_wfemi %>%
+  pluck(".workflow", 1)
+
+
+df_mars_wfemi = bind_cols(
+  df_test,
+  predict(mars_final_wfemi, df_test),
+  predict(mars_final_wfemi, df_test, type="prob")
+)
+```
+
+## calculate Brier score
+```{r}
+df_mars_wfemi$bs =  (df_mars_wfemi$.pred_1 - df_mars_wfemi$INFEC_after_diag_num)^2
+mean(df_mars_wfemi$bs)
+```
+
+## create calibration plot
+```{r}
+mars_cp = classifierplots::calibration_plot(df_mars_wfemi$INFEC_after_diag, df_mars_wfemi$.pred_1)
+mars_cp
+```
+
+## EN
+### extract models from last fit
+```{r}
+df_cll_st_wfemi = bind_cols(
+  df_test,
+  predict(cll_st_wfemi, df_test),
+  predict(cll_st_wfemi, df_test, type="prob")
+)
+```
+
+## calculate Brier score
+```{r}
+df_cll_st_wfemi$bs =  (df_cll_st_wfemi$.pred_1 - df_cll_st_wfemi$INFEC_after_diag_num)^2
+mean(df_cll_st_wfemi$bs)
+```
+
+## create calibration plot
+```{r}
+cll_st_cp = classifierplots::calibration_plot(df_cll_st_wfemi$INFEC_after_diag, df_cll_st_wfemi$.pred_1)
+cll_st_cp
+```
+
+
+lr_clp = classifierplots::classifierplots(df_lr_wfemi$INFEC_after_diag, df_lr_wfemi$.pred_1)
+lr_clp
+
+rf_clp = classifierplots::classifierplots(df_rf_wfemi$INFEC_after_diag, df_rf_wfemi$.pred_1)
+rf_clp
+
+svm_clp = classifierplots::classifierplots(df_svm_wfemi$INFEC_after_diag, df_svm_wfemi$.pred_1)
+svm_clp
+
+svm_r_clp = classifierplots::classifierplots(df_svm_r_wfemi$INFEC_after_diag, df_svm_r_wfemi$.pred_1)
+svm_r_clp
+
+xgb_clp = classifierplots::classifierplots(df_xgb_wfemi$INFEC_after_diag, df_xgb_wfemi$.pred_1)
+xgb_clp
+
+nb_clp = classifierplots::classifierplots(df_nb_wfemi$INFEC_after_diag, df_nb_wfemi$.pred_1)
+nb_clp
+
+mlp_clp = classifierplots::classifierplots(df_mlp_wfemi$INFEC_after_diag, df_mlp_wfemi$.pred_1)
+mlp_clp
+
+bag_clp = classifierplots::classifierplots(df_bag_wfemi$INFEC_after_diag, df_bag_wfemi$.pred_1)
+bag_clp
+
+dec_clp = classifierplots::classifierplots(df_dec_wfemi$INFEC_after_diag, df_dec_wfemi$.pred_1)
+dec_clp
+
+mars_clp = classifierplots::classifierplots(df_mars_wfemi$INFEC_after_diag, df_mars_wfemi$.pred_1)
+mars_clp
+
+cll_st_clp = classifierplots::classifierplots(df_cll_st_wfemi$INFEC_after_diag, df_cll_st_wfemi$.pred_1)
+cll_st_clp
