@@ -1,0 +1,1473 @@
+---
+title: "PMPRWE - without feature engineering alt"
+output: html_document
+---
+
+Load packages for project
+```{r setup, include=FALSE}
+options(width = 120)
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+library(tidyverse)
+library(skimr)
+library(tidymodels)
+library(matrixStats)
+library(vip)
+#library(kernlab)
+#library(doParallel)
+library(discrim)
+library(stacks)
+#library(kknn)
+```
+
+
+# Loading data and data curation
+```{r load_data}
+## Synthetic data for analysis
+dfraw <- read_csv("/users/home/candwei/pm_master/cll_tim_compound_infec_n.csv") %>% 
+  rename("id" = "...1") 
+```
+
+```{r}
+df <- dfraw %>% 
+  select(-c(id, Patient_id, INFEC_days_after_diag)) %>% 
+  mutate(INFEC_after_diag_num = INFEC_after_diag) %>%
+  mutate(INFEC_after_diag = factor(INFEC_after_diag, levels = c("1", "0")))
+
+colnames(df)[166:169] <- c("NAT_min","NAT_max","NAT_sd","NAT_mean")
+```
+
+#Model is.na(SD), SD==0 and SD!=0
+```{r}
+df <- df %>%
+mutate(
+  BETA2M_nr = case_when(is.na(BETA2M_sd)~0,BETA2M_sd==0~1, BETA2M_sd!=0~2),
+  LEUK_nr = case_when(is.na(LEUK_sd)~0,LEUK_sd==0~1, LEUK_sd!=0~2),
+  THR_nr = case_when(is.na(THR_sd)~0,THR_sd==0~1, THR_sd!=0~2),
+  AEC_nr = case_when(is.na(AEC_sd)~0,AEC_sd==0~1, AEC_sd!=0~2),
+  HAEM_nr = case_when(is.na(HAEM_sd)~0,HAEM_sd==0~1, HAEM_sd!=0~2),
+  URAT_nr = case_when(is.na(URAT_sd)~0,URAT_sd==0~1, URAT_sd!=0~2),
+  BASO_nr = case_when(is.na(BASO_sd)~0,BASO_sd==0~1, BASO_sd!=0~2),
+  TRANS_nr = case_when(is.na(TRANS_sd)~0,TRANS_sd==0~1, TRANS_sd!=0~2),
+  PSA_nr = case_when(is.na(PSA_sd)~0,PSA_sd==0~1, PSA_sd!=0~2),
+  SMUDGE_nr = case_when(is.na(SMUDGE_sd)~0,SMUDGE_sd==0~1, SMUDGE_sd!=0~2),
+  AMY_nr = case_when(is.na(AMY_sd)~0,AMY_sd==0~1, AMY_sd!=0~2),
+  ALC_nr = case_when(is.na(ALC_sd)~0,ALC_sd==0~1, ALC_sd!=0~2),
+  MIC_nr = case_when(is.na(MIC_sd)~0,MIC_sd==0~1, MIC_sd!=0~2),
+  MCV_nr = case_when(is.na(MCV_sd)~0,MCV_sd==0~1, MCV_sd!=0~2),
+  PROM_nr = case_when(is.na(PROM_sd)~0,PROM_sd==0~1, PROM_sd!=0~2),
+  CRP_nr = case_when(is.na(CRP_sd)~0,CRP_sd==0~1, CRP_sd!=0~2),
+  GLUC_nr = case_when(is.na(GLUC_sd)~0,GLUC_sd==0~1, GLUC_sd!=0~2),
+  HEMA_nr = case_when(is.na(HEMA_sd)~0,HEMA_sd==0~1, HEMA_sd!=0~2),
+  EGFR_nr = case_when(is.na(EGFR_sd)~0,EGFR_sd==0~1, EGFR_sd!=0~2),
+  EOS_nr = case_when(is.na(EOS_sd)~0,EOS_sd==0~1, EOS_sd!=0~2),
+  LDH_nr = case_when(is.na(LDH_sd)~0,LDH_sd==0~1, LDH_sd!=0~2),
+  NEU_nr = case_when(is.na(NEU_sd)~0,NEU_sd==0~1, NEU_sd!=0~2),
+  MCH_nr = case_when(is.na(MCH_sd)~0,MCH_sd==0~1, MCH_sd!=0~2),
+  MCHC_nr = case_when(is.na(MCHC_sd)~0,MCHC_sd==0~1, MCHC_sd!=0~2),
+  BLAST_nr = case_when(is.na(BLAST_sd)~0,BLAST_sd==0~1, BLAST_sd!=0~2),
+  MYEL_nr = case_when(is.na(MYEL_sd)~0,MYEL_sd==0~1, MYEL_sd!=0~2),
+  METAMYEL_nr = case_when(is.na(METAMYEL_sd)~0,METAMYEL_sd==0~1, METAMYEL_sd!=0~2),
+  ALB_nr = case_when(is.na(ALB_sd)~0,ALB_sd==0~1, ALB_sd!=0~2),
+  ALP_nr = case_when(is.na(ALP_sd)~0,ALP_sd==0~1, ALP_sd!=0~2),
+  INR_nr = case_when(is.na(INR_sd)~0,INR_sd==0~1, INR_sd!=0~2),
+  NAT_nr = case_when(is.na(NAT_sd)~0,NAT_sd==0~1, NAT_sd!=0~2))
+
+df <- df %>%
+  mutate(
+    BETA2M_nr = factor(BETA2M_nr,levels = c("2","1","0")),
+    LEUK_nr = factor(LEUK_nr,levels = c("2","1","0")),
+    THR_nr = factor(THR_nr,levels = c("2","1","0")),
+    AEC_nr = factor(AEC_nr,levels = c("2","1","0")),
+    HAEM_nr = factor(HAEM_nr,levels = c("2","1","0")),
+    URAT_nr = factor(URAT_nr,levels = c("2","1","0")),
+    BASO_nr = factor(BASO_nr,levels = c("2","1","0")),
+    TRANS_nr = factor(TRANS_nr,levels = c("2","1","0")),
+    PSA_nr = factor(PSA_nr,levels = c("2","1","0")),
+    SMUDGE_nr = factor(SMUDGE_nr,levels = c("2","1","0")),
+    AMY_nr = factor(AMY_nr,levels = c("2","1","0")),
+    ALC_nr = factor(ALC_nr,levels = c("2","1","0")),
+    MIC_nr = factor(MIC_nr,levels = c("2","1","0")),
+    MCV_nr = factor(MCV_nr,levels = c("2","1","0")),
+    PROM_nr = factor(PROM_nr,levels = c("2","1","0")),
+    CRP_nr = factor(CRP_nr,levels = c("2","1","0")),
+    GLUC_nr = factor(GLUC_nr,levels = c("2","1","0")),
+    HEMA_nr = factor(HEMA_nr,levels = c("2","1","0")),
+    EGFR_nr = factor(EGFR_nr,levels = c("2","1","0")),
+    EOS_nr = factor(EOS_nr,levels = c("2","1","0")),
+    LDH_nr = factor(LDH_nr,levels = c("2","1","0")),
+    NEU_nr = factor(NEU_nr,levels = c("2","1","0")),
+    MCH_nr = factor(MCH_nr,levels = c("2","1","0")),
+    MCHC_nr = factor(MCHC_nr,levels = c("2","1","0")),
+    BLAST_nr = factor(BLAST_nr,levels = c("2","1","0")),
+    MYEL_nr = factor(MYEL_nr,levels = c("2","1","0")),
+    METAMYEL_nr = factor(METAMYEL_nr,levels = c("2","1","0")),
+    ALB_nr = factor(ALB_nr,levels = c("2","1","0")),
+    ALP_nr = factor(ALP_nr,levels = c("2","1","0")),
+    INR_nr = factor(INR_nr,levels = c("2","1","0")),
+    NAT_nr = factor(NAT_nr,levels = c("2","1","0"))
+  )
+```
+
+```{r}
+set.seed(42)
+
+# Create random samples of the rows with 20% set aside for testing
+df_split <- df %>% 
+  initial_split(prop = 0.8)
+
+# Extract the datasets
+df_other <- training(df_split)
+df_test  <- testing(df_split)
+
+# For the non testing set we create a 75/25 train/validation split
+# The original data is then split into 60/20/20 proportions for training, validation and testing
+df_val <- vfold_cv(df_other, v = 5)
+```
+
+# Define models
+
+## Set overall recipe
+```{r}
+metric <- metric_set(roc_auc)
+
+ctrl_grid <- control_stack_grid()
+ctrl_res <- control_stack_resamples()
+
+size_grid = 50
+
+cll_rec <-
+  recipe(INFEC_after_diag ~ ., data = df_other) %>%
+
+  step_impute_linear(BETA2M_min,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+  step_impute_linear(BETA2M_max,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+  step_impute_linear(BETA2M_sd,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(BETA2M_mean,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(THR_min,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(THR_max,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(THR_sd,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(THR_mean,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(AEC_min,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(AEC_max,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(AEC_sd,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(AEC_mean,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(URAT_min,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(URAT_max,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(URAT_sd,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(URAT_mean,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+      step_impute_linear(TRANS_min,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(TRANS_max,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(TRANS_sd,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(TRANS_mean,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+      step_impute_linear(PSA_min,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(PSA_max,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(PSA_sd,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(PSA_mean,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(MIC_min,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(MIC_max,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(MIC_sd,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+      step_impute_linear(SMUDGE_min,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(SMUDGE_max,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(SMUDGE_sd,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(SMUDGE_mean,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+      step_impute_linear(AMY_min,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(AMY_max,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(AMY_sd,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(AMY_mean,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(MIC_mean,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%   
+  
+    step_impute_linear(MCV_min,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(MCV_max,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(MCV_sd,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(MCV_mean,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(PROM_min,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(PROM_max,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(PROM_sd,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(PROM_mean,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(CRP_min,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(CRP_max,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(CRP_sd,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(CRP_mean,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(GLUC_min,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(GLUC_max,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(GLUC_sd,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(GLUC_mean,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(CREA_min,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(CREA_max,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(CREA_sd,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(CREA_mean,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(CREAK_min,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(CREAK_max,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(CREAK_sd,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(CREAK_mean,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(HEMA_min,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(HEMA_max,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(HEMA_sd,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(HEMA_mean,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(EGFR_min,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age)) %>%
+  
+    step_impute_linear(EGFR_max,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(EGFR_sd,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(EGFR_mean,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(LDH_min,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(LDH_max,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(LDH_sd,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(LDH_mean,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+      step_impute_linear(MCH_min,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(MCH_max,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(MCH_sd,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(MCH_mean,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+      step_impute_linear(MCHC_min,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(MCHC_max,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(MCHC_sd,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(MCHC_mean,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+      step_impute_linear(ALB_min,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age)) %>%
+  
+    step_impute_linear(ALB_max,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(ALB_sd,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(ALB_mean,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+      step_impute_linear(ALP_min,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(ALP_max,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(ALP_sd,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(ALP_mean,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+      step_impute_linear(INR_min,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(INR_max,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(INR_sd,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(INR_mean,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+      step_impute_linear(NAT_min,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(NAT_max,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(NAT_sd,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+    step_impute_linear(NAT_mean,
+                     impute_with = imp_vars(Binet_Stage_A,Binet_Stage_B,Binet_Stage_C,IGHV_unmut_Mutated,IGHV_unmut_Unmutated,IGHV_unmut_NA,ECOG_0,ECOG_1,ECOG_2,ECOG_3,ECOG_4,ECOG_5,ECOG_NA,FamCLL_Yes,FamCLL_No,FamCLL_NA,Beta2m_Yes,Beta2m_No,Beta2m_NA,CD38_Yes,CD38_No,CD38_NA,ZAP70_Yes,ZAP70_No,ZAP70_NA,Gender_M,Gender_F,del13_Yes,del13_No,del13_NA,tri12_Yes,tri12_No,tri12_NA,del11_Yes,del11_No,del11_NA,Age,LEUK_min,LEUK_max,LEUK_sd,LEUK_mean,HAEM_min,HAEM_max,HAEM_sd,HAEM_mean,BASO_min,BASO_max,BASO_sd,BASO_mean,ALC_min,ALC_max,ALC_sd,ALC_mean,EOS_min,EOS_max,EOS_sd,EOS_mean,NEU_min,NEU_max,NEU_sd,NEU_mean,BLAST_min,BLAST_max,BLAST_sd,BLAST_mean,MYEL_min,MYEL_max,MYEL_sd,MYEL_mean,METAMYEL_min,METAMYEL_max,METAMYEL_sd,METAMYEL_mean, INFEC_n, INFEC_after_diag_num)) %>%
+  
+  step_rm(INFEC_after_diag_num) %>%
+  step_dummy(ends_with("nr"), one_hot = TRUE) %>%
+  step_zv(all_predictors()) %>%           # Remove variables with no variation
+  step_normalize(all_predictors())
+  
+
+cll_wflow <-
+  workflow() %>%
+  add_recipe(cll_rec)
+```
+
+
+## LR
+```{r}
+lr_res_fe =   readRDS("lr_res_fe")
+```
+
+We can print the metrics from the model training using the collect_metrics command.
+```{r}
+lr_res_fe %>% 
+  collect_metrics()
+```
+
+We can also plot the performance of all the models as a function of the tuning parameters, to get a quick overview.
+```{r}
+autoplot(lr_res_fe)
+
+```
+
+We can select the best model, i.e. combination of penalty and mixture with best AUC, by sorting on the mean AUC value, and "slicing" of the first row.
+```{r}
+lr_best_fe <- 
+  lr_res_fe %>% 
+  collect_metrics() %>% 
+  arrange(-mean) %>% 
+  dplyr::slice(1)
+
+lr_best_fe
+
+# Alternatively the sorting and slicing may be done using
+# show_best(lr_res)
+```
+
+Finally we can plot the ROC for the best model
+```{r}
+lr_auc_fe <- 
+  lr_res_fe %>% 
+  collect_predictions(parameters = lr_best_fe) %>% 
+  roc_curve(INFEC_after_diag, .pred_1) %>% 
+  mutate(model = "Elastic Net")
+
+autoplot(lr_auc_fe)
+```
+
+## RF
+```{r}
+rf_res_fe = readRDS("rf_res_fe")
+```
+
+Print the top performing models
+```{r}
+show_best(rf_res_fe)
+```
+
+We can plot the performance against the tuning parameters
+```{r}
+autoplot(rf_res_fe)
+```
+
+ROC for the best model
+```{r}
+rf_best_fe <- 
+  rf_res_fe %>% 
+  collect_metrics() %>% 
+  arrange(-mean) %>% 
+  dplyr::slice(1)
+
+rf_best_fe
+
+rf_auc_fe <- 
+  rf_res_fe %>% 
+  collect_predictions(parameters = rf_best_fe) %>% 
+  roc_curve(INFEC_after_diag, .pred_1) %>% 
+  mutate(model = "Random forrest")
+
+autoplot(rf_auc_fe)
+```
+
+
+## SVM
+```{r}
+svm_res_fe = readRDS("svm_res_fe")
+```
+
+We can print the metrics from the model training using the collect_metrics command.
+```{r}
+svm_res_fe %>% 
+  collect_metrics()
+```
+
+We can also plot the performance of all the models as a function of the tuning parameters, to get a quick overview.
+```{r}
+autoplot(svm_res_fe)
+```
+
+We can select the best model, i.e. combination of penalty and mixture with best AUC, by sorting on the mean AUC value, and "slicing" of the first row.
+```{r}
+svm_best_fe <- 
+  svm_res_fe %>% 
+  collect_metrics() %>% 
+  arrange(-mean) %>% 
+  dplyr::slice(1)
+
+#svm_best
+show_best(svm_res_fe)
+```
+
+Finally we can plot the ROC for the best model
+```{r}
+svm_auc_fe <- 
+  svm_res_fe %>% 
+  collect_predictions(parameters = svm_best_fe) %>% 
+  roc_curve(INFEC_after_diag, .pred_1) %>% 
+  mutate(model = "SVM")
+
+autoplot(svm_auc_fe)
+```
+
+## SVM with radial basis
+```{r}
+svm_r_res_fe = readRDS("svm_r_res_fe")
+```
+We can print the metrics from the model training using the collect_metrics command.
+```{r}
+svm_r_res_fe %>% 
+  collect_metrics()
+```
+
+We can also plot the performance of all the models as a function of the tuning parameters, to get a quick overview.
+```{r}
+autoplot(svm_r_res_fe)
+```
+
+We can select the best model, i.e. combination of penalty and mixture with best AUC, by sorting on the mean AUC value, and "slicing" of the first row.
+```{r}
+svm_r_best_fe <- 
+  svm_r_res_fe %>% 
+  collect_metrics() %>% 
+  arrange(-mean) %>% 
+  dplyr::slice(1)
+
+#s best svm_r
+show_best(svm_r_res_fe)
+```
+
+Finally we can plot the ROC for the best model
+```{r}
+svm_r_auc_fe <- 
+  svm_r_res_fe %>% 
+  collect_predictions(parameters = svm_r_best_fe) %>% 
+  roc_curve(INFEC_after_diag, .pred_1) %>% 
+  mutate(model = "SVM radial")
+
+autoplot(svm_r_auc_fe)
+```
+
+## extrem gradient boost
+```{r}
+xgb_res_fe = readRDS("xgb_res_fe")
+
+```
+
+We can print the metrics from the model training using the collect_metrics command.
+```{r}
+xgb_res_fe %>% 
+  collect_metrics()
+```
+
+We can also plot the performance of all the models as a function of the tuning parameters, to get a quick overview.
+```{r}
+autoplot(xgb_res_fe)
+```
+
+We can select the best model, i.e. combination of penalty and mixture with best AUC, by sorting on the mean AUC value, and "slicing" of the first row.
+```{r}
+xgb_best_fe <- 
+  xgb_res_fe %>% 
+  collect_metrics() %>% 
+  arrange(-mean) %>% 
+  dplyr::slice(1)
+
+#svm_best
+show_best(xgb_res_fe)
+```
+
+Finally we can plot the ROC for the best model
+```{r}
+xgb_auc_fe <- 
+  xgb_res_fe %>% 
+  collect_predictions(parameters = xgb_best_fe) %>% 
+  roc_curve(INFEC_after_diag, .pred_1) %>% 
+  mutate(model = "xgboost")
+
+autoplot(xgb_auc_fe)
+```
+
+
+## Multilayer perceptron
+```{r}
+mlp_res_fe = readRDS("mlp_res_fe")
+
+```
+
+We can print the metrics from the model training using the collect_metrics command.
+```{r}
+mlp_res_fe %>% 
+  collect_metrics()
+```
+
+We can also plot the performance of all the models as a function of the tuning parameters, to get a quick overview.
+```{r}
+autoplot(mlp_res_fe)
+```
+
+We can select the best model, i.e. combination of penalty and mixture with best AUC, by sorting on the mean AUC value, and "slicing" of the first row.
+```{r}
+mlp_best_fe <- 
+  mlp_res_fe %>% 
+  collect_metrics() %>% 
+  arrange(-mean) %>% 
+  dplyr::slice(1)
+
+#mlp_best
+show_best(mlp_res_fe)
+```
+
+Finally we can plot the ROC for the best model
+```{r}
+mlp_auc_fe <- 
+  mlp_res_fe %>% 
+  collect_predictions(parameters = mlp_best_fe) %>% 
+  roc_curve(INFEC_after_diag, .pred_1) %>% 
+  mutate(model = "Multilayer Perceptron")
+
+autoplot(mlp_auc_fe)
+```
+
+## Naive Bayes
+```{r}
+nb_res_fe = readRDS("nb_res_fe")
+```
+
+```{r}
+nb_res_fe %>% 
+  collect_metrics()
+```
+
+We can also plot the performance of all the models as a function of the tuning parameters, to get a quick overview.
+```{r}
+autoplot(nb_res_fe)
+```
+
+We can select the best model, i.e. combination of penalty and mixture with best AUC, by sorting on the mean AUC value, and "slicing" of the first row.
+```{r}
+nb_best_fe <- 
+  nb_res_fe %>% 
+  collect_metrics() %>% 
+  arrange(-mean) %>% 
+  dplyr::slice(1)
+
+show_best(nb_res_fe)
+```
+
+Finally we can plot the ROC for the best model
+```{r}
+nb_auc_fe <- 
+  nb_res_fe %>% 
+  collect_predictions(parameters = nb_best_fe) %>% 
+  roc_curve(INFEC_after_diag, .pred_1) %>% 
+  mutate(model = "naive Bayes")
+
+autoplot(nb_auc_fe)
+```
+
+# Bagged tree
+```{r}
+bag_res_fe = readRDS("bag_res_fe")
+
+```
+
+
+We can print the metrics from the model training using the collect_metrics command.
+```{r}
+bag_res_fe %>%
+  collect_metrics()
+```
+
+We can also plot the performance of all the models as a function of the tuning parameters, to get a quick overview.
+```{r}
+autoplot(bag_res_fe)
+```
+
+We can select the best model, i.e. combination of penalty and mixture with best AUC, by sorting on the mean AUC value, and "slicing" of the first row.
+```{r}
+bag_best_fe <- 
+  bag_res_fe %>% 
+  collect_metrics() %>% 
+  arrange(-mean) %>% 
+  dplyr::slice(1)
+
+#bag best
+show_best(bag_res_fe)
+```
+
+Finally we can plot the ROC for the best model
+```{r}
+bag_auc_fe <- 
+  bag_res_fe %>% 
+  collect_predictions(parameters = bag_best_fe) %>% 
+  roc_curve(INFEC_after_diag, .pred_1) %>% 
+  mutate(model = "Bagged trees")
+
+autoplot(bag_auc_fe)
+```
+# decision tree
+```{r}
+dec_res_fe = readRDS("dec_res_fe")
+```
+
+
+We can print the metrics from the model training using the collect_metrics command.
+```{r}
+dec_res_fe %>%
+  collect_metrics()
+```
+
+We can also plot the performance of all the models as a function of the tuning parameters, to get a quick overview.
+```{r}
+autoplot(dec_res_fe)
+```
+
+We can select the best model, i.e. combination of penalty and mixture with best AUC, by sorting on the mean AUC value, and "slicing" of the first row.
+```{r}
+dec_best_fe <- 
+  dec_res_fe %>% 
+  collect_metrics() %>% 
+  arrange(-mean) %>% 
+  dplyr::slice(1)
+
+#bag best
+show_best(dec_res_fe)
+```
+
+Finally we can plot the ROC for the best model
+```{r}
+dec_auc_fe <- 
+  dec_res_fe %>% 
+  collect_predictions(parameters = dec_best_fe) %>% 
+  roc_curve(INFEC_after_diag, .pred_1) %>% 
+  mutate(model = "Decision tree")
+
+autoplot(dec_auc_fe)
+```
+
+<!-- # Multivariate adaptive regression splines -->
+<!-- ```{r} -->
+<!-- mars_mod_fe <- mars( -->
+<!--       num_terms = tune(), -->
+<!--       prod_degree = tune(), -->
+<!--       prune_method = tune()) %>%  -->
+<!--   set_engine("earth", nfold = 5) %>% -->
+<!--   set_mode("classification") -->
+
+<!-- mars_wflow_fe <- -->
+<!--   cll_wflow %>% -->
+<!--   add_model(mars_mod_fe) -->
+
+
+<!-- mars_params_fe <-  -->
+<!--   dials::parameters( -->
+<!--     num_terms(), -->
+<!--     prod_degree(), -->
+<!--     prune_method() -->
+<!--   ) -->
+
+<!-- mars_params_fe <- -->
+<!--   mars_params_fe %>% -->
+<!--   update(num_terms = finalize(num_terms(), df %>% select(-INFEC_after_diag))) -->
+
+<!-- mars_grid_fe <-  -->
+<!--   dials::grid_max_entropy( -->
+<!--     mars_params_fe,  -->
+<!--     size = size_grid -->
+<!--   ) -->
+
+<!-- mars_res_fe <-  -->
+<!--   tune_grid( -->
+<!--     object = mars_wflow_fe,  -->
+<!--     resamples = df_val,  -->
+<!--     grid = mars_grid_fe, -->
+<!--     control = ctrl_grid, -->
+<!--     metrics = metric -->
+<!--   ) -->
+
+<!-- saveRDS(mars_res_fe, "/users/home/candwei/mars_res_fe") -->
+<!-- ``` -->
+
+
+<!-- We can print the metrics from the model training using the collect_metrics command. -->
+<!-- ```{r} -->
+<!-- mars_res_fe %>% -->
+<!--   collect_metrics() -->
+<!-- ``` -->
+
+<!-- We can also plot the performance of all the models as a function of the tuning parameters, to get a quick overview. -->
+<!-- ```{r} -->
+<!-- autoplot(mars_res_fe) -->
+<!-- ``` -->
+
+<!-- We can select the best model, i.e. combination of penalty and mixture with best AUC, by sorting on the mean AUC value, and "slicing" of the first row. -->
+<!-- ```{r} -->
+<!-- mars_best_fe <-  -->
+<!--   mars_res_fe %>%  -->
+<!--   collect_metrics() %>%  -->
+<!--   arrange(-mean) %>%  -->
+<!--   dplyr::slice(1) -->
+
+<!-- #bag best -->
+<!-- show_best(mars_res_fe) -->
+<!-- ``` -->
+
+<!-- Finally we can plot the ROC for the best model -->
+<!-- ```{r} -->
+<!-- mars_auc_fe <-  -->
+<!--   mars_res_fe %>%  -->
+<!--   collect_predictions(parameters = mars_best_fe) %>%  -->
+<!--   roc_curve(INFEC_after_diag, .pred_1) %>%  -->
+<!--   mutate(model = "Multivariate adaptive regression splines") -->
+
+<!-- autoplot(mars_auc_fe) -->
+<!-- ``` -->
+
+# Last model
+This section demonstrates how to retrain the model on the combined training and validation set, using the optimal tuning parameters, and evaluating the performance on the test set.
+
+## LR
+```{r}
+# Create model with best parameter
+lr_final_mod_fe <- logistic_reg(penalty = lr_best_fe$penalty, mixture = lr_best_fe$mixture) %>% 
+  set_engine("glmnet")
+
+# Create final workflow
+lr_final_workflow_fe <- workflow() %>% 
+ add_model(lr_final_mod_fe) %>% 
+  add_recipe(cll_rec)
+
+# Last fit
+lr_last_fit_fe <- last_fit(lr_final_workflow_fe, split = df_split)
+lr_last_fit_fe %>% collect_metrics()
+```
+
+We can print the most important features used for the prediction using the variable importance function. Vip depends on the type of model, so we include the type of variable importance score. For the EN model, which is a paramatric model, we get the model coefficients.
+
+## RF
+```{r}
+# Create model with best parameter
+# In order to extract the variable importance we need to specify it in set_engine
+rf_final_mod_fe <- 
+  rand_forest(mtry = rf_best_fe$mtry, min_n = rf_best_fe$min_n, trees = rf_best_fe$trees) %>% 
+  set_engine("ranger", importance = "impurity") %>% 
+  set_mode("classification")
+
+# Create final workflow
+rf_final_workflow_fe <- workflow() %>% 
+ add_model(rf_final_mod_fe) %>% 
+  add_recipe(cll_rec)
+
+# Last fit
+rf_last_fit_fe <- last_fit(rf_final_workflow_fe, split = df_split)
+rf_last_fit_fe %>% collect_metrics()
+```
+
+
+## SVM
+```{r}
+# Create model with best parameter
+# In order to extract the variable importance we need to specify it in set_engine
+svm_final_mod_fe <- 
+  svm_poly(cost = svm_best_fe$cost, degree = svm_best_fe$degree) %>% 
+  set_engine("kernlab") %>% 
+  set_mode("classification")
+
+# Create final workflow
+svm_final_workflow_fe <- workflow() %>% 
+  add_model(svm_final_mod_fe) %>% 
+  add_recipe(cll_rec)
+
+# Last fit
+svm_last_fit_fe <- last_fit(svm_final_workflow_fe, split = df_split)
+svm_last_fit_fe %>% collect_metrics()
+```
+
+
+
+## SVM with radial basis
+```{r}
+# Create model with best parameter
+# In order to extract the variable importance we need to specify it in set_engine
+svm_r_final_mod_fe <- 
+  svm_rbf(cost = svm_r_best_fe$cost, rbf_sigma = svm_r_best_fe$rbf_sigma) %>% 
+  set_engine("kernlab") %>% 
+  set_mode("classification")
+
+# Create final workflow
+svm_r_final_workflow_fe <- workflow() %>% 
+ add_model(svm_r_final_mod_fe) %>% 
+  add_recipe(cll_rec)
+
+# Last fit
+svm_r_last_fit_fe <- last_fit(svm_r_final_workflow_fe, split = df_split)
+svm_r_last_fit_fe %>% collect_metrics()
+```
+
+
+## XGBOOSTING
+```{r}
+# Create model with best parameter
+# In order to extract the variable importance we need to specify it in set_engine
+xgb_final_mod_fe <- 
+  boost_tree(min_n = xgb_best_fe$min_n,tree_depth = xgb_best_fe$tree_depth, learn_rate = xgb_best_fe$learn_rate,loss_reduction = xgb_best_fe$loss_reduction, trees=xgb_best_fe$trees) %>% 
+  set_engine("xgboost") %>% 
+  set_mode("classification")
+
+# Create final workflow
+xgb_final_workflow_fe <- workflow() %>% 
+ add_model(xgb_final_mod_fe) %>% 
+  add_recipe(cll_rec)
+
+# Last fit
+xgb_last_fit_fe <- last_fit(xgb_final_workflow_fe, split = df_split)
+xgb_last_fit_fe %>% collect_metrics()
+```
+
+
+## mlp
+```{r}
+# Create model with best parameter
+# In order to extract the variable importance we need to specify it in set_engine
+mlp_final_mod_fe <- 
+  mlp(hidden_units = mlp_best_fe$hidden_units, penalty = mlp_best_fe$penalty, epochs = mlp_best_fe$epochs) %>% 
+  set_engine("nnet", trace=0,MaxNWts=10000) %>% 
+  set_mode("classification")
+
+# Create final workflow
+mlp_final_workflow_fe <- workflow() %>% 
+ add_model(mlp_final_mod_fe) %>% 
+  add_recipe(cll_rec)
+
+# Last fit
+mlp_last_fit_fe <- last_fit(mlp_final_workflow_fe, split = df_split)
+mlp_last_fit_fe %>% collect_metrics()
+```
+
+##Bagged trees
+```{r}
+# Create model with best parameter
+# In order to extract the variable importance we need to specify it in set_engine
+bag_final_mod_fe <- 
+   baguette::bag_tree(
+           min_n = bag_best_fe$min_n,
+           class_cost = bag_best_fe$class_cost)%>% 
+  set_engine("C5.0") %>% 
+  set_mode("classification")
+
+
+# Create final workflow
+bag_final_workflow_fe <- workflow() %>% 
+ add_model(bag_final_mod_fe) %>% 
+  add_recipe(cll_rec)
+
+# Last fit
+bag_last_fit_fe <- last_fit(bag_final_workflow_fe, split = df_split)
+bag_last_fit_fe %>% collect_metrics()
+```
+
+
+## Naive Bayes
+```{r}
+# Create model with best parameter
+# In order to extract the variable importance we need to specify it in set_engine
+nb_final_mod_fe <- 
+  naive_Bayes(smoothness = nb_best_fe$smoothness, Laplace = nb_best_fe$Laplace) %>% 
+  set_engine("naivebayes") %>% 
+  set_mode("classification")
+
+
+# Create final workflow
+nb_final_workflow_fe <- workflow() %>% 
+ add_model(nb_final_mod_fe) %>% 
+  add_recipe(cll_rec)
+
+# Last fit
+nb_last_fit_fe <- last_fit(nb_final_workflow_fe, split = df_split)
+nb_last_fit_fe %>% collect_metrics()
+```
+
+
+## Decision tree
+```{r}
+# Create model with best parameter
+# In order to extract the variable importance we need to specify it in set_engine
+dec_final_mod_fe <- 
+  decision_tree(
+    min_n = dec_best_fe$min_n,
+    cost_complexity = dec_best_fe$cost_complexity,
+    tree_depth = dec_best_fe$tree_depth) %>% 
+  set_engine("rpart") %>% 
+  set_mode("classification")
+
+# Create final workflow
+dec_final_workflow_fe <- workflow() %>% 
+ add_model(dec_final_mod_fe) %>% 
+  add_recipe(cll_rec)
+
+# Last fit
+dec_last_fit_fe <- last_fit(dec_final_workflow_fe, split = df_split)
+dec_last_fit_fe %>% collect_metrics()
+```
+
+<!-- ## MARS -->
+<!-- ```{r} -->
+<!-- # Create model with best parameter -->
+<!-- # In order to extract the variable importance we need to specify it in set_engine -->
+<!-- mars_final_mod_fe <-  -->
+<!--   mars( -->
+<!--     num_terms = mars_best_fe$num_terms, -->
+<!--     prune_method = mars_best_fe$prune_method, -->
+<!--     prod_degree = mars_best_fe$prod_degree) %>%  -->
+<!--   set_engine("earth") %>%  -->
+<!--   set_mode("classification") -->
+
+<!-- # Create final workflow -->
+<!-- mars_final_workflow_fe <- workflow() %>%  -->
+<!--  add_model(mars_final_mod_fe) %>%  -->
+<!--   add_recipe(cll_rec) -->
+
+<!-- # Last fit -->
+<!-- mars_last_fit_fe <- last_fit(mars_final_workflow_fe, split = df_split) -->
+<!-- mars_last_fit_fe %>% collect_metrics() -->
+<!-- ``` -->
+
+# Create stack
+## Create stack
+```{r}
+cll_st_fe <- 
+  stacks() %>%
+  add_candidates(lr_res_fe) %>%
+  add_candidates(rf_res_fe) %>%
+  add_candidates(svm_res_fe) %>%
+  add_candidates(svm_r_res_fe) %>%
+  add_candidates(xgb_res_fe) %>%
+  add_candidates(nb_res_fe) %>%
+  add_candidates(mlp_res_fe) %>%
+  add_candidates(bag_res_fe) %>%
+  add_candidates(dec_res_fe) %>%
+  #add_candidates(mars_res_fe) %>%
+  blend_predictions() %>%
+  fit_members()
+
+saveRDS(cll_st_fe, "/users/home/candwei/cll_st_fe")
+```
+
+## Visualize trade-off between number of members and performance
+```{r}
+autoplot(cll_st_fe)
+```
+
+## Other visualization showing trade-off vs performance
+```{r}
+autoplot(cll_st_fe, type = "members")
+```
+
+## Look at penalty 
+```{r}
+autoplot(cll_st_fe, type="weights")
+```
+
+## Check parameters
+```{r}
+collect_parameters(cll_st_fe,"lr_res_fe")
+```
+
+## Predicting new data
+```{r}
+cll_pred_fe <-
+  df_test %>%
+  bind_cols(predict(cll_st_fe,.,type = "prob"))
+  
+yardstick::roc_auc(
+  cll_pred_fe,
+  truth = INFEC_after_diag,
+  contains(".pred_1")
+)
+```
+
+## compare with individual models
+```{r}
+cll_pred_fe <-
+  df_test %>%
+  select(INFEC_after_diag) %>%
+  bind_cols(
+    predict(
+      cll_st_fe,
+      df_test,
+      type = "class",
+      members = TRUE
+    )
+  )
+```
+
+## compare members with total
+```{r}
+map_dfr(
+  setNames(colnames(cll_pred_fe),colnames(cll_pred_fe)),
+  ~mean(cll_pred_fe$INFEC_after_diag == pull(cll_pred_fe, .x))
+) %>%
+  pivot_longer(c(everything(),-INFEC_after_diag))
+```
+
+## Callibration plots
+
+## EN
+### extract models from last fit
+```{r}
+lr_final_fe = lr_last_fit_fe %>%
+  pluck(".workflow", 1)
+
+
+df_lr_fe = bind_cols(
+  df_test,
+  predict(lr_final_fe, df_test),
+  predict(lr_final_fe, df_test, type="prob")
+)
+```
+
+## calculate Brier score
+```{r}
+df_lr_fe$bs =  (df_lr_fe$.pred_1 - df_lr_fe$INFEC_after_diag_num)^2
+mean(df_lr_fe$bs)
+```
+
+## create calibration plot
+```{r}
+lr_cp = classifierplots::calibration_plot(df_lr_fe$INFEC_after_diag, df_lr_fe$.pred_1)
+lr_cp
+```
+## RF
+### extract models from last fit
+```{r}
+rf_final_fe = rf_last_fit_fe %>%
+  pluck(".workflow", 1)
+
+
+df_rf_fe = bind_cols(
+  df_test,
+  predict(rf_final_fe, df_test),
+  predict(rf_final_fe, df_test, type="prob")
+)
+```
+
+## calculate Brier score
+```{r}
+df_rf_fe$bs =  (df_rf_fe$.pred_1 - df_rf_fe$INFEC_after_diag_num)^2
+mean(df_rf_fe$bs)
+```
+
+## create calibration plot
+```{r}
+rf_cp = classifierplots::calibration_plot(df_rf_fe$INFEC_after_diag, df_rf_fe$.pred_1)
+rf_cp
+```
+
+## SVM
+### extract models from last fit
+```{r}
+svm_final_fe = svm_last_fit_fe %>%
+  pluck(".workflow", 1)
+
+
+df_svm_fe = bind_cols(
+  df_test,
+  predict(svm_final_fe, df_test),
+  predict(svm_final_fe, df_test, type="prob")
+)
+```
+
+## calculate Brier score
+```{r}
+df_svm_fe$bs =  (df_svm_fe$.pred_1 - df_svm_fe$INFEC_after_diag_num)^2
+mean(df_svm_fe$bs)
+```
+
+## create calibration plot
+```{r}
+svm_cp = classifierplots::calibration_plot(df_svm_fe$INFEC_after_diag, df_svm_fe$.pred_1)
+svm_cp
+```
+## SVM with radient kernel basis
+### extract models from last fit
+```{r}
+svm_r_final_fe = svm_r_last_fit_fe %>%
+  pluck(".workflow", 1)
+
+
+df_svm_r_fe = bind_cols(
+  df_test,
+  predict(svm_r_final_fe, df_test),
+  predict(svm_r_final_fe, df_test, type="prob")
+)
+```
+
+## calculate Brier score
+```{r}
+df_svm_r_fe$bs =  (df_svm_r_fe$.pred_1 - df_svm_r_fe$INFEC_after_diag_num)^2
+mean(df_svm_r_fe$bs)
+```
+
+## create calibration plot
+```{r}
+svm_r_cp = classifierplots::calibration_plot(df_svm_r_fe$INFEC_after_diag, df_svm_r_fe$.pred_1)
+svm_r_cp
+```
+
+## xgb
+### extract models from last fit
+```{r}
+xgb_final_fe = xgb_last_fit_fe %>%
+  pluck(".workflow", 1)
+
+
+df_xgb_fe = bind_cols(
+  df_test,
+  predict(xgb_final_fe, df_test),
+  predict(xgb_final_fe, df_test, type="prob")
+)
+```
+
+## calculate Brier score
+```{r}
+df_xgb_fe$bs =  (df_xgb_fe$.pred_1 - df_xgb_fe$INFEC_after_diag_num)^2
+mean(df_xgb_fe$bs)
+```
+
+## create calibration plot
+```{r}
+xgb_cp = classifierplots::calibration_plot(df_xgb_fe$INFEC_after_diag, df_xgb_fe$.pred_1)
+xgb_cp
+```
+
+## Naive Bayes
+### extract models from last fit
+```{r}
+nb_final_fe = nb_last_fit_fe %>%
+  pluck(".workflow", 1)
+
+
+df_nb_fe = bind_cols(
+  df_test,
+  predict(nb_final_fe, df_test),
+  predict(nb_final_fe, df_test, type="prob")
+)
+```
+
+## calculate Brier score
+```{r}
+df_nb_fe$bs =  (df_nb_fe$.pred_1 - df_nb_fe$INFEC_after_diag_num)^2
+mean(df_nb_fe$bs)
+```
+
+## create calibration plot
+```{r}
+nb_cp = classifierplots::calibration_plot(df_nb_fe$INFEC_after_diag, df_nb_fe$.pred_1)
+nb_cp
+```
+
+## Multilayer perceptron
+### extract models from last fit
+```{r}
+mlp_final_fe = mlp_last_fit_fe %>%
+  pluck(".workflow", 1)
+
+
+df_mlp_fe = bind_cols(
+  df_test,
+  predict(mlp_final_fe, df_test),
+  predict(mlp_final_fe, df_test, type="prob")
+)
+```
+
+## calculate Brier score
+```{r}
+df_mlp_fe$bs =  (df_mlp_fe$.pred_1 - df_mlp_fe$INFEC_after_diag_num)^2
+mean(df_mlp_fe$bs)
+```
+
+## create calibration plot
+```{r}
+mlp_cp = classifierplots::calibration_plot(df_mlp_fe$INFEC_after_diag, df_mlp_fe$.pred_1)
+mlp_cp
+```
+
+## Bagged trees
+### extract models from last fit
+```{r}
+bag_final_fe = bag_last_fit_fe %>%
+  pluck(".workflow", 1)
+
+
+df_bag_fe = bind_cols(
+  df_test,
+  predict(bag_final_fe, df_test),
+  predict(bag_final_fe, df_test, type="prob")
+)
+```
+
+## calculate Brier score
+```{r}
+df_bag_fe$bs =  (df_bag_fe$.pred_1 - df_bag_fe$INFEC_after_diag_num)^2
+mean(df_bag_fe$bs)
+```
+
+## create calibration plot
+```{r}
+bag_cp = classifierplots::calibration_plot(df_bag_fe$INFEC_after_diag, df_bag_fe$.pred_1)
+bag_cp
+```
+
+## Decision tree
+### extract models from last fit
+```{r}
+dec_final_fe = dec_last_fit_fe %>%
+  pluck(".workflow", 1)
+
+
+df_dec_fe = bind_cols(
+  df_test,
+  predict(dec_final_fe, df_test),
+  predict(dec_final_fe, df_test, type="prob")
+)
+```
+
+## calculate Brier score
+```{r}
+df_dec_fe$bs =  (df_dec_fe$.pred_1 - df_dec_fe$INFEC_after_diag_num)^2
+mean(df_dec_fe$bs)
+```
+
+## create calibration plot
+```{r}
+dec_cp = classifierplots::calibration_plot(df_dec_fe$INFEC_after_diag, df_dec_fe$.pred_1)
+dec_cp
+```
+
+<!-- ## MARS -->
+<!-- ### extract models from last fit -->
+<!-- ```{r} -->
+<!-- mars_final_fe = mars_last_fit_fe %>% -->
+<!--   pluck(".workflow", 1) -->
+
+
+<!-- df_mars_fe = bind_cols( -->
+<!--   df_test, -->
+<!--   predict(mars_final_fe, df_test), -->
+<!--   predict(mars_final_fe, df_test, type="prob") -->
+<!-- ) -->
+<!-- ``` -->
+
+<!-- ## calculate Brier score -->
+<!-- ```{r} -->
+<!-- df_mars_fe$bs =  (df_mars_fe$.pred_1 - df_mars_fe$INFEC_after_diag_num)^2 -->
+<!-- mean(df_mars_fe$bs) -->
+<!-- ``` -->
+
+<!-- ## create calibration plot -->
+<!-- ```{r} -->
+<!-- mars_cp = classifierplots::calibration_plot(df_mars_fe$INFEC_after_diag, df_mars_fe$.pred_1) -->
+<!-- mars_cp -->
+<!-- ``` -->
+
+## Stack
+### extract models from last fit
+```{r}
+df_cll_st_fe = bind_cols(
+  df_test,
+  predict(cll_st_fe, df_test),
+  predict(cll_st_fe, df_test, type="prob")
+)
+```
+
+## calculate Brier score
+```{r}
+df_cll_st_fe$bs =  (df_cll_st_fe$.pred_1 - df_cll_st_fe$INFEC_after_diag_num)^2
+mean(df_cll_st_fe$bs)
+```
+
+## create calibration plot
+```{r}
+cll_st_cp = classifierplots::calibration_plot(df_cll_st_fe$INFEC_after_diag, df_cll_st_fe$.pred_1)
+cll_st_cp
+```
+
+
+lr_clp = classifierplots::classifierplots(df_lr_fe$INFEC_after_diag, df_lr_fe$.pred_1)
+lr_clp
+
+rf_clp = classifierplots::classifierplots(df_rf_fe$INFEC_after_diag, df_rf_fe$.pred_1)
+rf_clp
+
+svm_clp = classifierplots::classifierplots(df_svm_fe$INFEC_after_diag, df_svm_fe$.pred_1)
+svm_clp
+
+svm_r_clp = classifierplots::classifierplots(df_svm_r_fe$INFEC_after_diag, df_svm_r_fe$.pred_1)
+svm_r_clp
+
+xgb_clp = classifierplots::classifierplots(df_xgb_fe$INFEC_after_diag, df_xgb_fe$.pred_1)
+xgb_clp
+
+nb_clp = classifierplots::classifierplots(df_nb_fe$INFEC_after_diag, df_nb_fe$.pred_1)
+nb_clp
+
+mlp_clp = classifierplots::classifierplots(df_mlp_fe$INFEC_after_diag, df_mlp_fe$.pred_1)
+mlp_clp
+
+bag_clp = classifierplots::classifierplots(df_bag_fe$INFEC_after_diag, df_bag_fe$.pred_1)
+bag_clp
+
+dec_clp = classifierplots::classifierplots(df_dec_fe$INFEC_after_diag, df_dec_fe$.pred_1)
+dec_clp
+
+<!-- mars_clp = classifierplots::classifierplots(df_mars_fe$INFEC_after_diag, df_mars_fe$.pred_1) -->
+<!-- mars_clp -->
+
+cll_st_clp = classifierplots::classifierplots(df_cll_st_fe$INFEC_after_diag, df_cll_st_fe$.pred_1)
+cll_st_clp
