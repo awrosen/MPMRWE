@@ -1081,22 +1081,7 @@ dec_last_fit_fe %>% collect_metrics()
 # Create stack
 ## Create stack
 ```{r}
-cll_st_fe <- 
-  stacks() %>%
-  add_candidates(lr_res_fe) %>%
-  add_candidates(rf_res_fe) %>%
-  add_candidates(svm_res_fe) %>%
-  add_candidates(svm_r_res_fe) %>%
-  add_candidates(xgb_res_fe) %>%
-  add_candidates(nb_res_fe) %>%
-  add_candidates(mlp_res_fe) %>%
-  add_candidates(bag_res_fe) %>%
-  add_candidates(dec_res_fe) %>%
-  #add_candidates(mars_res_fe) %>%
-  blend_predictions() %>%
-  fit_members()
-
-saveRDS(cll_st_fe, "/users/home/candwei/cll_st_fe")
+cll_st_fe = readRDS("cll_st_fe")
 ```
 
 ## Visualize trade-off between number of members and performance
