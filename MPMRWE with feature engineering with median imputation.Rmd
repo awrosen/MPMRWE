@@ -1,7 +1,8 @@
 ---
-title: "MPMRWE-withFE-median-impute"
+title: "MPMRWE-withFE-withmI-alt"
 output: html_document
 ---
+
 Load packages for project
 ```{r setup, include=FALSE}
 options(width = 120)
@@ -140,7 +141,7 @@ cll_rec <-
   step_rm(INFEC_after_diag_num) %>%
   step_dummy(ends_with("nr"), one_hot = TRUE) %>%
   step_zv(all_predictors()) %>%           # Remove variables with no variation
-    step_impute_median(all_predictors()) %>%
+  step_impute_median(all_predictors()) %>%
   step_normalize(all_predictors())
   
 
@@ -152,37 +153,7 @@ cll_wflow <-
 
 ## LR
 ```{r}
-lr_mod_femi <- 
-  logistic_reg(penalty = tune(), mixture = tune()) %>% 
-  set_mode("classification") %>%
-  set_engine("glmnet")
-
-lr_wflow_femi <-
-  cll_wflow %>%
-  add_model(lr_mod_femi)
-
-lr_params_femi <- 
-  dials::parameters(
-    penalty(),
-    mixture()
-  )
-
-lr_grid_femi <- 
-  dials::grid_max_entropy(
-    lr_params_femi, 
-    size = size_grid
-  )
-
-lr_res_femi <- 
-  tune_grid(
-  object = lr_wflow_femi,
-  resamples = df_val,
-  grid = lr_grid_femi,
-  control = ctrl_grid,
-  metrics = metric
-  )
-
-saveRDS(lr_res_femi, "/users/home/candwei/lr_res_femi")
+lr_res_femi =   readRDS("lr_res_femi")
 ```
 
 We can print the metrics from the model training using the collect_metrics command.
@@ -224,51 +195,7 @@ autoplot(lr_auc_femi)
 
 ## RF
 ```{r}
-#cores <- parallel::detectCores()
-rf_mod_femi <-
-  rand_forest(
-    mtry = tune(),
-    min_n = tune(),
-    trees = tune(),
-  ) %>% set_mode("classification") %>%
-  set_engine("ranger"#, 
-             #num.threads = cores
-             )
-
-rf_wflow_femi <-
-  cll_wflow %>%
-  add_model(rf_mod_femi)
-
-cll.mtry = select(df,-INFEC_after_diag)
-finalize(mtry(),cll.mtry)
-
-rf_params_femi <- 
-  dials::parameters(
-    dials::mtry(),
-    min_n(),
-    trees()
-  )
-
-rf_params_femi <-
-  rf_params_femi %>%
-  update(mtry = finalize(mtry(), df %>% select(-INFEC_after_diag)))
-
-rf_grid_femi <- 
-  dials::grid_max_entropy(
-    rf_params_femi, 
-    size = size_grid
-  )
-
-rf_res_femi <- 
-  tune_grid(
-    object = rf_wflow_femi, 
-    resamples = df_val, 
-    grid = rf_grid_femi,
-    control = ctrl_grid,
-    metrics = metric
-  )
-
-saveRDS(rf_res_femi, "/users/home/candwei/rf_res_femi")
+rf_res_femi = readRDS("rf_res_femi")
 ```
 
 Print the top performing models
@@ -303,42 +230,7 @@ autoplot(rf_auc_femi)
 
 ## SVM
 ```{r}
-svm_mod_femi <-
-  svm_poly(
-    cost  = tune(),
-    degree = tune(),
-  ) %>% set_mode("classification") %>%
-  set_engine("kernlab")
-
-svm_wflow_femi <-
-  cll_wflow %>%
-  add_model(svm_mod_femi)
-
-
-svm_params_femi <- 
-  dials::parameters(
-    cost(),
-    degree()
-  )
-
-svm_grid_femi <- 
-  dials::grid_max_entropy(
-    svm_params_femi, 
-    size = size_grid
-  )
-svm_grid_femi$degree = as.integer(svm_grid_femi$degree)
-
-svm_res_femi <- 
-  tune_grid(
-    object = svm_wflow_femi, 
-    resamples = df_val, 
-    grid = svm_grid_femi,
-    control = ctrl_grid,
-    metrics = metric
-  )
-
-saveRDS(svm_res_femi, "/users/home/candwei/svm_res_femi")
-
+svm_res_femi = readRDS("svm_res_femi")
 ```
 
 We can print the metrics from the model training using the collect_metrics command.
@@ -377,40 +269,7 @@ autoplot(svm_auc_femi)
 
 ## SVM with radial basis
 ```{r}
-svm_r_mod_femi <-
-  svm_rbf(
-    cost  = tune(),
-    rbf_sigma = tune(),
-  ) %>% set_mode("classification") %>%
-  set_engine("kernlab")
-
-svm_r_wflow_femi <-
-  cll_wflow %>%
-  add_model(svm_r_mod_femi)
-
-
-svm_r_params_femi <- 
-  dials::parameters(
-    cost(),
-    rbf_sigma()
-  )
-
-svm_r_grid_femi <- 
-  dials::grid_max_entropy(
-    svm_r_params_femi, 
-    size = size_grid
-  )
-
-svm_r_res_femi <- 
-  tune_grid(
-    object = svm_r_wflow_femi, 
-    resamples = df_val, 
-    grid = svm_r_grid_femi,
-    control = ctrl_grid,
-    metrics = metric
-  )
-
-saveRDS(svm_r_res_femi, "/users/home/candwei/svm_r_res_femi")
+svm_r_res_femi = readRDS("svm_r_res_femi")
 ```
 We can print the metrics from the model training using the collect_metrics command.
 ```{r}
@@ -448,46 +307,7 @@ autoplot(svm_r_auc_femi)
 
 ## extrem gradient boost
 ```{r}
-xgb_mod_femi <-
-  boost_tree(
-    trees = tune(),
-    min_n = tune(),
-    tree_depth = tune(),
-    learn_rate = tune(),
-    loss_reduction = tune()) %>% 
-  set_engine("xgboost") %>%
-  set_mode("classification")
-
-xgb_wflow_femi <-
-  cll_wflow %>%
-  add_model(xgb_mod_femi)
-
-
-xgb_params_femi <- 
-  dials::parameters(
-    trees(),
-    min_n(),
-    tree_depth(),
-    learn_rate(),
-    loss_reduction()
-  )
-
-xgb_grid_femi <- 
-  dials::grid_max_entropy(
-    xgb_params_femi, 
-    size = size_grid
-  )
-
-xgb_res_femi <- 
-  tune_grid(
-    object = xgb_wflow_femi, 
-    resamples = df_val, 
-    grid = xgb_grid_femi,
-    control = ctrl_grid,
-    metrics = metric
-  )
-
-saveRDS(xgb_res_femi, "/users/home/candwei/xgb_res_femi")
+xgb_res_femi = readRDS("xgb_res_femi")
 
 ```
 
@@ -528,43 +348,7 @@ autoplot(xgb_auc_femi)
 
 ## Multilayer perceptron
 ```{r}
-mlp_mod_femi <- 
-    mlp(
-      hidden_units = tune(),
-      penalty = tune(),
-      epochs = tune()
-      ) %>% 
-  set_engine("nnet", trace = 0,MaxNWts=10000) %>% 
-  set_mode("classification")
-
-mlp_wflow_femi <-
-  cll_wflow %>%
-  add_model(mlp_mod_femi)
-
-
-mlp_params_femi <- 
-  dials::parameters(
-    hidden_units(),
-    penalty(),
-    epochs()
-  )
-
-mlp_grid_femi <- 
-  dials::grid_max_entropy(
-    mlp_params_femi, 
-    size = size_grid
-  )
-
-mlp_res_femi <- 
-  tune_grid(
-    object = mlp_wflow_femi, 
-    resamples = df_val, 
-    grid = mlp_grid_femi,
-    control = ctrl_grid,
-    metrics = metric
-  )
-
-saveRDS(mlp_res_femi, "/users/home/candwei/mlp_res_femi")
+mlp_res_femi = readRDS("mlp_res_femi")
 
 ```
 
@@ -604,42 +388,7 @@ autoplot(mlp_auc_femi)
 
 ## Naive Bayes
 ```{r}
-nb_mod_femi <- 
-  naive_Bayes(
-    smoothness = tune(),
-    Laplace = tune()
-    ) %>% 
-  set_engine("naivebayes") %>%
-  set_mode("classification")
-
-nb_wflow_femi <-
-  cll_wflow %>%
-  add_model(nb_mod_femi)
-
-
-nb_params_femi <- 
-  dials::parameters(
-    smoothness(),
-    Laplace()
-  )
-
-nb_grid_femi <- 
-  dials::grid_max_entropy(
-    nb_params_femi, 
-    size = size_grid
-  )
-
-nb_res_femi <- 
-  tune_grid(
-    object = nb_wflow_femi, 
-    resamples = df_val, 
-    grid = nb_grid_femi,
-    control = ctrl_grid,
-    metrics = metric
-  )
-
-saveRDS(nb_res_femi, "/users/home/candwei/nb_res_femi")
-
+nb_res_femi = readRDS("nb_res_femi")
 ```
 
 ```{r}
@@ -676,40 +425,7 @@ autoplot(nb_auc_femi)
 
 # Bagged tree
 ```{r}
-bag_mod_femi <- 
-  baguette::bag_tree(
-           min_n = tune(),
-           class_cost = tune()) %>% 
-  set_engine("C5.0") %>%
-  set_mode("classification")
-
-bag_wflow_femi <-
-  cll_wflow %>%
-  add_model(bag_mod_femi)
-
-
-bag_params_femi <- 
-  dials::parameters(
-    min_n(),
-    baguette::class_cost()
-  )
-
-bag_grid_femi <- 
-  dials::grid_max_entropy(
-    bag_params_femi, 
-    size = size_grid
-  )
-
-bag_res_femi <- 
-  tune_grid(
-    object = bag_wflow_femi, 
-    resamples = df_val, 
-    grid = bag_grid_femi,
-    control = ctrl_grid,
-    metrics = metric
-  )
-
-saveRDS(bag_res_femi, "/users/home/candwei/bag_res_femi")
+bag_res_femi = readRDS("bag_res_femi")
 
 ```
 
@@ -749,42 +465,7 @@ autoplot(bag_auc_femi)
 ```
 # decision tree
 ```{r}
-dec_mod_femi <- 
-  decision_tree(
-           min_n = tune(),
-           cost_complexity = tune(),
-           tree_depth = tune()) %>% 
-  set_engine("rpart") %>%
-  set_mode("classification")
-
-dec_wflow_femi <-
-  cll_wflow %>%
-  add_model(dec_mod_femi)
-
-
-dec_params_femi <- 
-  dials::parameters(
-    min_n(),
-    cost_complexity(),
-    tree_depth()
-  )
-
-dec_grid_femi <- 
-  dials::grid_max_entropy(
-    dec_params_femi, 
-    size = size_grid
-  )
-
-dec_res_femi <- 
-  tune_grid(
-    object = dec_wflow_femi, 
-    resamples = df_val, 
-    grid = dec_grid_femi,
-    control = ctrl_grid,
-    metrics = metric
-  )
-
-saveRDS(dec_res_femi, "/users/home/candwei/dec_res_femi")
+dec_res_femi = readRDS("dec_res_femi")
 ```
 
 
@@ -824,49 +505,7 @@ autoplot(dec_auc_femi)
 
 # Multivariate adaptive regression splines
 ```{r}
-mars_mod_femi <- mars(
-      num_terms = tune(),
-      prod_degree = tune(),
-      prune_method = tune()) %>% 
-  set_engine("earth", nfold = 5) %>%
-  set_mode("classification")
-
-mars_wflow_femi <-
-  cll_wflow %>%
-  add_model(mars_mod_femi)
-
-
-mars_params_femi <- 
-  dials::parameters(
-    num_terms(),
-    prod_degree(),
-    prune_method()
-  )
-
-mars_params_femi <-
-  mars_params_femi %>%
-  update(num_terms = finalize(num_terms(), df %>% select(-INFEC_after_diag)))
-
-mars_grid_femi <- 
-  dials::grid_max_entropy(
-    mars_params_femi, 
-    size = size_grid
-  )
-
-mars_grid_femi$num_terms = as.numeric(mars_grid_femi$num_terms)
-mars_grid_femi$prod_degree = as.numeric(mars_grid_femi$prod_degree)
-
-
-mars_res_femi <- 
-  tune_grid(
-    object = mars_wflow_femi, 
-    resamples = df_val, 
-    grid = mars_grid_femi,
-    control = ctrl_grid,
-    metrics = metric
-  )
-
-saveRDS(mars_res_femi, "/users/home/candwei/mars_res_femi")
+mars_res_femi = readRDS("mars_res_femi")
 ```
 
 
@@ -883,10 +522,10 @@ autoplot(mars_res_femi)
 
 We can select the best model, i.e. combination of penalty and mixture with best AUC, by sorting on the mean AUC value, and "slicing" of the first row.
 ```{r}
-mars_best_femi <- 
-  mars_res_femi %>% 
-  collect_metrics() %>% 
-  arrange(-mean) %>% 
+mars_best_femi <-
+  mars_res_femi %>%
+  collect_metrics() %>%
+  arrange(-mean) %>%
   dplyr::slice(1)
 
 #bag best
@@ -895,10 +534,10 @@ show_best(mars_res_femi)
 
 Finally we can plot the ROC for the best model
 ```{r}
-mars_auc_femi <- 
-  mars_res_femi %>% 
-  collect_predictions(parameters = mars_best_femi) %>% 
-  roc_curve(INFEC_after_diag, .pred_1) %>% 
+mars_auc_femi <-
+  mars_res_femi %>%
+  collect_predictions(parameters = mars_best_femi) %>%
+  roc_curve(INFEC_after_diag, .pred_1) %>%
   mutate(model = "Multivariate adaptive regression splines")
 
 autoplot(mars_auc_femi)
@@ -906,6 +545,14 @@ autoplot(mars_auc_femi)
 
 # Last model
 This section demonstrates how to retrain the model on the combined training and validation set, using the optimal tuning parameters, and evaluating the performance on the test set.
+
+## Metrics to report
+```{r}
+multi_metric = metric_set(accuracy,mcc, bal_accuracy, detection_prevalence,f_meas,j_index,kap,
+                          npv, ppv, sensitivity,specificity, average_precision,classification_cost,
+                          gain_capture,mn_log_loss,pr_auc,roc_auc)
+```
+
 
 ## LR
 ```{r}
@@ -918,9 +565,11 @@ lr_final_workflow_femi <- workflow() %>%
  add_model(lr_final_mod_femi) %>% 
   add_recipe(cll_rec)
 
+# 
+
 # Last fit
-lr_last_fit_femi <- last_fit(lr_final_workflow_femi, split = df_split)
-lr_last_fit_femi %>% collect_metrics()
+lr_last_fit_femi <- last_fit(lr_final_workflow_femi, split = df_split,metrics = multi_metric)
+lr_last_fit_femi %>% collect_metrics() %>% select(1,3) %>% View()
 ```
 
 We can print the most important features used for the prediction using the variable importance function. Vip depends on the type of model, so we include the type of variable importance score. For the EN model, which is a paramatric model, we get the model coefficients.
@@ -940,8 +589,8 @@ rf_final_workflow_femi <- workflow() %>%
   add_recipe(cll_rec)
 
 # Last fit
-rf_last_fit_femi <- last_fit(rf_final_workflow_femi, split = df_split)
-rf_last_fit_femi %>% collect_metrics()
+rf_last_fit_femi <- last_fit(rf_final_workflow_femi, split = df_split, metrics = multi_metric)
+rf_last_fit_femi %>% collect_metrics() %>% select(1,3)
 ```
 
 
@@ -960,8 +609,8 @@ svm_final_workflow_femi <- workflow() %>%
   add_recipe(cll_rec)
 
 # Last fit
-svm_last_fit_femi <- last_fit(svm_final_workflow_femi, split = df_split)
-svm_last_fit_femi %>% collect_metrics()
+svm_last_fit_femi <- last_fit(svm_final_workflow_femi, split = df_split, metrics = multi_metric)
+svm_last_fit_femi %>% collect_metrics() %>%  select(1,3)
 ```
 
 
@@ -981,8 +630,8 @@ svm_r_final_workflow_femi <- workflow() %>%
   add_recipe(cll_rec)
 
 # Last fit
-svm_r_last_fit_femi <- last_fit(svm_r_final_workflow_femi, split = df_split)
-svm_r_last_fit_femi %>% collect_metrics()
+svm_r_last_fit_femi <- last_fit(svm_r_final_workflow_femi, split = df_split, metrics = multi_metric)
+svm_r_last_fit_femi %>% collect_metrics() %>% select(1,3)
 ```
 
 
@@ -1001,8 +650,8 @@ xgb_final_workflow_femi <- workflow() %>%
   add_recipe(cll_rec)
 
 # Last fit
-xgb_last_fit_femi <- last_fit(xgb_final_workflow_femi, split = df_split)
-xgb_last_fit_femi %>% collect_metrics()
+xgb_last_fit_femi <- last_fit(xgb_final_workflow_femi, split = df_split, metrics = multi_metric)
+xgb_last_fit_femi %>% collect_metrics() %>% select(1,3)
 ```
 
 
@@ -1021,8 +670,8 @@ mlp_final_workflow_femi <- workflow() %>%
   add_recipe(cll_rec)
 
 # Last fit
-mlp_last_fit_femi <- last_fit(mlp_final_workflow_femi, split = df_split)
-mlp_last_fit_femi %>% collect_metrics()
+mlp_last_fit_femi <- last_fit(mlp_final_workflow_femi, split = df_split, metrics = multi_metric)
+mlp_last_fit_femi %>% collect_metrics() %>% select(1,3)
 ```
 
 ##Bagged trees
@@ -1043,8 +692,8 @@ bag_final_workflow_femi <- workflow() %>%
   add_recipe(cll_rec)
 
 # Last fit
-bag_last_fit_femi <- last_fit(bag_final_workflow_femi, split = df_split)
-bag_last_fit_femi %>% collect_metrics()
+bag_last_fit_femi <- last_fit(bag_final_workflow_femi, split = df_split, metrics = multi_metric)
+bag_last_fit_femi %>% collect_metrics() %>% select(1,3)
 ```
 
 
@@ -1064,8 +713,8 @@ nb_final_workflow_femi <- workflow() %>%
   add_recipe(cll_rec)
 
 # Last fit
-nb_last_fit_femi <- last_fit(nb_final_workflow_femi, split = df_split)
-nb_last_fit_femi %>% collect_metrics()
+nb_last_fit_femi <- last_fit(nb_final_workflow_femi, split = df_split, metrics = multi_metric)
+nb_last_fit_femi %>% collect_metrics() %>% select(1,3)
 ```
 
 
@@ -1087,51 +736,36 @@ dec_final_workflow_femi <- workflow() %>%
   add_recipe(cll_rec)
 
 # Last fit
-dec_last_fit_femi <- last_fit(dec_final_workflow_femi, split = df_split)
-dec_last_fit_femi %>% collect_metrics()
+dec_last_fit_femi <- last_fit(dec_final_workflow_femi, split = df_split, metrics = multi_metric)
+dec_last_fit_femi %>% collect_metrics() %>% select(1,3)
 ```
 
 ## MARS
 ```{r}
 # Create model with best parameter
 # In order to extract the variable importance we need to specify it in set_engine
-mars_final_mod_femi <- 
+mars_final_mod_femi <-
   mars(
     num_terms = mars_best_femi$num_terms,
     prune_method = mars_best_femi$prune_method,
-    prod_degree = mars_best_femi$prod_degree) %>% 
-  set_engine("earth") %>% 
+    prod_degree = mars_best_femi$prod_degree) %>%
+  set_engine("earth") %>%
   set_mode("classification")
 
 # Create final workflow
-mars_final_workflow_femi <- workflow() %>% 
- add_model(mars_final_mod_femi) %>% 
+mars_final_workflow_femi <- workflow() %>%
+ add_model(mars_final_mod_femi) %>%
   add_recipe(cll_rec)
 
 # Last fit
-mars_last_fit_femi <- last_fit(mars_final_workflow_femi, split = df_split)
-mars_last_fit_femi %>% collect_metrics()
+mars_last_fit_femi <- last_fit(mars_final_workflow_femi, split = df_split, metrics = multi_metric)
+mars_last_fit_femi %>% collect_metrics() %>% select(1,3)
 ```
 
 # Create stack
 ## Create stack
 ```{r}
-cll_st_femi <- 
-  stacks() %>%
-  add_candidates(lr_res_femi) %>%
-  add_candidates(rf_res_femi) %>%
-  add_candidates(svm_res_femi) %>%
-  add_candidates(svm_r_res_femi) %>%
-  add_candidates(xgb_res_femi) %>%
-  add_candidates(nb_res_femi) %>%
-  add_candidates(mlp_res_femi) %>%
-  add_candidates(bag_res_femi) %>%
-  add_candidates(dec_res_femi) %>%
-  add_candidates(mars_res_femi) %>%
-  blend_predictions() %>%
-  fit_members()
-
-saveRDS(cll_st_femi, "/users/home/candwei/cll_st_femi")
+cll_st_femi = readRDS("cll_st_femi")
 ```
 
 ## Visualize trade-off between number of members and performance
@@ -1165,6 +799,43 @@ yardstick::roc_auc(
   truth = INFEC_after_diag,
   contains(".pred_1")
 )
+
+
+cll_pred_femi %>% 
+  pr_auc(INFEC_after_diag, .pred_1)
+
+cll_pred_femi %>% 
+  average_precision(INFEC_after_diag, .pred_1)
+
+cll_pred_femi %>% 
+  classification_cost(INFEC_after_diag, .pred_1)
+
+cll_pred_femi %>% 
+  gain_capture(INFEC_after_diag, .pred_1)
+
+cll_pred_femi %>% 
+  pr_auc(INFEC_after_diag, .pred_1)
+
+cll_pred_femi %>% 
+  mn_log_loss(INFEC_after_diag, .pred_1)
+```
+
+## Predicting new data
+```{r}
+cll_pred_femi1 <-
+  df_test %>%
+  bind_cols(predict(cll_st_femi,.,type = "class"))
+  
+cll_pred_femi1 %>% 
+  accuracy(INFEC_after_diag, .pred_class)
+
+cll_pred_femi1 %>% 
+  bal_accuracy(INFEC_after_diag, .pred_class)
+
+cll_pred_femi1 %>% 
+  detection_prevalence(INFEC_after_diag, .pred_class)
+
+
 ```
 
 ## compare with individual models
@@ -1451,7 +1122,7 @@ mars_cp = classifierplots::calibration_plot(df_mars_femi$INFEC_after_diag, df_ma
 mars_cp
 ```
 
-## EN
+## Stack
 ### extract models from last fit
 ```{r}
 df_cll_st_femi = bind_cols(
@@ -1477,32 +1148,132 @@ cll_st_cp
 lr_clp = classifierplots::classifierplots(df_lr_femi$INFEC_after_diag, df_lr_femi$.pred_1)
 lr_clp
 
+dir.create("plot_femi_lr")
+classifierplots::classifierplots_folder(
+  test.y=df_lr_femi$INFEC_after_diag,
+  pred.prob = df_lr_femi$.pred_1,
+  folder = "plot_femi_lr",
+  height = 250,
+  width = 250
+)
+
 rf_clp = classifierplots::classifierplots(df_rf_femi$INFEC_after_diag, df_rf_femi$.pred_1)
 rf_clp
+
+dir.create("plot_femi_rf")
+classifierplots::classifierplots_folder(
+  test.y=df_rf_femi$INFEC_after_diag,
+  pred.prob = df_rf_femi$.pred_1,
+  folder = "plot_femi_rf",
+  height = 250,
+  width = 250
+)
 
 svm_clp = classifierplots::classifierplots(df_svm_femi$INFEC_after_diag, df_svm_femi$.pred_1)
 svm_clp
 
+dir.create("plot_femi_svm")
+classifierplots::classifierplots_folder(
+  test.y=df_svm_femi$INFEC_after_diag,
+  pred.prob = df_svm_femi$.pred_1,
+  folder = "plot_femi_svm",
+  height = 250,
+  width = 250
+)
+
 svm_r_clp = classifierplots::classifierplots(df_svm_r_femi$INFEC_after_diag, df_svm_r_femi$.pred_1)
 svm_r_clp
+
+dir.create("plot_femi_svm_r")
+classifierplots::classifierplots_folder(
+  test.y=df_svm_r_femi$INFEC_after_diag,
+  pred.prob = df_svm_r_femi$.pred_1,
+  folder = "plot_femi_svm_r",
+  height = 250,
+  width = 250
+)
 
 xgb_clp = classifierplots::classifierplots(df_xgb_femi$INFEC_after_diag, df_xgb_femi$.pred_1)
 xgb_clp
 
+dir.create("plot_femi_xgb")
+classifierplots::classifierplots_folder(
+  test.y=df_xgb_femi$INFEC_after_diag,
+  pred.prob = df_xgb_femi$.pred_1,
+  folder = "plot_femi_xgb",
+  height = 250,
+  width = 250
+)
+
 nb_clp = classifierplots::classifierplots(df_nb_femi$INFEC_after_diag, df_nb_femi$.pred_1)
 nb_clp
+
+dir.create("plot_femi_nb")
+classifierplots::classifierplots_folder(
+  test.y=df_nb_femi$INFEC_after_diag,
+  pred.prob = df_nb_femi$.pred_1,
+  folder = "plot_femi_nb",
+  height = 250,
+  width = 250
+)
 
 mlp_clp = classifierplots::classifierplots(df_mlp_femi$INFEC_after_diag, df_mlp_femi$.pred_1)
 mlp_clp
 
+dir.create("plot_femi_mlp")
+classifierplots::classifierplots_folder(
+  test.y=df_mlp_femi$INFEC_after_diag,
+  pred.prob = df_mlp_femi$.pred_1,
+  folder = "plot_femi_mlp",
+  height = 250,
+  width = 250
+)
+
 bag_clp = classifierplots::classifierplots(df_bag_femi$INFEC_after_diag, df_bag_femi$.pred_1)
 bag_clp
 
+
+dir.create("plot_femi_bag")
+classifierplots::classifierplots_folder(
+  test.y=df_bag_femi$INFEC_after_diag,
+  pred.prob = df_bag_femi$.pred_1,
+  folder = "plot_femi_bag",
+  height = 250,
+  width = 250
+)
 dec_clp = classifierplots::classifierplots(df_dec_femi$INFEC_after_diag, df_dec_femi$.pred_1)
 dec_clp
+
+dir.create("plot_femi_dec")
+classifierplots::classifierplots_folder(
+  test.y=df_dec_femi$INFEC_after_diag,
+  pred.prob = df_dec_femi$.pred_1,
+  folder = "plot_femi_dec",
+  height = 250,
+  width = 250
+)
 
 mars_clp = classifierplots::classifierplots(df_mars_femi$INFEC_after_diag, df_mars_femi$.pred_1)
 mars_clp
 
+dir.create("plot_femi_mars")
+classifierplots::classifierplots_folder(
+  test.y=df_mars_femi$INFEC_after_diag,
+  pred.prob = df_mars_femi$.pred_1,
+  folder = "plot_femi_mars",
+  height = 250,
+  width = 250
+)
+
 cll_st_clp = classifierplots::classifierplots(df_cll_st_femi$INFEC_after_diag, df_cll_st_femi$.pred_1)
 cll_st_clp
+
+dir.create("plot_femi_cll_st")
+classifierplots::classifierplots_folder(
+  test.y=df_cll_st_femi$INFEC_after_diag,
+  pred.prob = df_cll_st_femi$.pred_1,
+  folder = "plot_femi_cll_st",
+  height = 250,
+  width = 250
+)
+
