@@ -1433,3 +1433,22 @@ mars_clp
 
 cll_st_clp = classifierplots::classifierplots(df_cll_st_wfemi$INFEC_after_diag, df_cll_st_wfemi$.pred_1)
 cll_st_clp
+
+```{r}
+kabla = dec_last_fit_wfemi %>% 
+  extract_workflow %>%
+  DALEXtra::explain_tidymodels(
+  data = as.data.frame(df_split[1]$data),
+  y = as.vector(df_split[1]$data$INFEC_after_diag_num)
+  )
+
+kabla1 = rf_last_fit_wfemi %>% 
+  extract_workflow %>%
+  DALEXtra::explain_tidymodels(
+  data = as.data.frame(df_split[1]$data),
+  y = as.vector(df_split[1]$data$INFEC_after_diag_num)
+  )
+
+
+plot(ingredients::feature_importance(kabla1))
+```
