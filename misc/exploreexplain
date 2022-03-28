@@ -1,0 +1,345 @@
+---
+title: "Explore"
+output: html_document
+---
+
+Load packages for project
+```{r setup, include=FALSE}
+options(width = 120)
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+library(tidyverse)
+library(skimr)
+library(tidymodels)
+library(matrixStats)
+library(vip)
+#library(kernlab)
+#library(doParallel)
+library(discrim)
+library(stacks)
+#library(kknn)
+library(modelStudio)
+library(DALEXtra)
+```
+
+```{r}
+kabla = dec_last_fit_wfe %>% 
+  extract_workflow %>%
+  DALEXtra::explain_tidymodels(
+  data = as.data.frame(df_split[1]$data),
+  y = as.vector(df_split[1]$data$INFEC_after_diag_num)
+  )
+
+kabla1 = rf_last_fit_wfe %>% 
+  extract_workflow %>%
+  DALEXtra::explain_tidymodels(
+  data = as.data.frame(df_split[1]$data),
+  y = as.vector(df_split[1]$data$INFEC_after_diag_num)
+  )
+
+
+plot(ingredients::feature_importance(kabla1))
+```
+
+```{r}
+lr_last_fit_fe %>% extract_fit_parsnip() %>% vip()
+```
+
+```{r}
+exfit = svm_last_fit_wfe %>% extract_fit_parsnip()
+```
+
+```{r}
+X <- prep(cll_rec, df_other) %>% 
+  juice() %>% 
+  select(-INFEC_after_diag) %>% 
+  as.matrix()
+```
+
+```{r}
+shap = fastshap::explain(exfit,
+               X = X,
+               #pred_wrapper = predict,
+               exact = TRUE)
+```
+```{r}
+feat <- prep(cll_rec, df_other) %>% 
+  juice()
+```
+
+
+## probably
+```{r}
+eks3 = svm_r_last_fit_fe$.predictions
+
+eks3 %>% as.tibble()
+
+svm_r_last_fit_fe$.predictions %>% as.data.frame() %>% as.tibble() %>% select(3,5) %>%
+  probably::threshold_perf(truth = INFEC_after_diag,
+                         estimate = .pred_1,
+                         thresholds = seq(0.5, 1, by = 0.05))
+  
+  svm_r_last_fit_fe %>% extract_workflow_set_result()
+
+```
+
+```{r}
+lr_last_fit_wfe %>% extract_fit_parsnip() %>% vip()
+```
+
+```{r}
+rf_last_fit_wfe %>% extract_fit_parsnip() %>% vip()
+```
+
+```{r}
+svm_last_fit_wfe %>% extract_fit_parsnip() %>% vip()
+```
+
+```{r}
+mlp_last_fit_wfe %>% extract_fit_parsnip() %>% vip()
+```
+
+```{r}
+kabla1 = svm_last_fit_wfe %>% 
+  extract_workflow %>%
+  DALEXtra::explain_tidymodels(
+  data = as.data.frame(df_split[1]$data),
+  y = as.vector(df_split[1]$data$INFEC_after_diag_num),
+  exact = T
+  )
+
+hey = svm_last_fit_wfe %>% 
+  extract_workflow
+
+dasd = explain_tidymodels(hey,
+                          data = df_other,
+                          y = as.numeric(as.character(df_other$INFEC_after_diag))
+                          )
+
+
+modelStudio(dasd, N = 20)
+```
+modelStudio(
+new_observation = df_test,
+new_observation_y  = INFEC_after_diag,
+new_observation_n = 600
+)
+
+## MLP no 22 
+```{r}
+# Create model with best parameter
+# In order to extract the variable importance we need to specify it in set_engine
+mlp_22 <- 
+  mlp(hidden_units = 1 , penalty = 5.987413e-01, epochs = 334) %>% 
+  set_engine("nnet", trace=0,MaxNWts=10000) %>% 
+  set_mode("classification")
+
+# Create final workflow
+mlp_22_workflow_wfemi <- workflow() %>% 
+ add_model(mlp_22) %>% 
+  add_recipe(cll_rec)
+
+# Last fit
+mlp_22_fit_wfemi <- last_fit(mlp_22_workflow_wfemi, split = df_split)
+mlp_22_fit_wfemi %>% collect_metrics() %>% select(1,3)
+```
+mlp_22_fit_wfemi %>% extract_fit_parsnip() %>% vip(num_features = 25)
+
+
+## RF 16
+```{r}
+# Create model with best parameter
+# In order to extract the variable importance we need to specify it in set_engine
+rf_16 <- 
+  rand_forest(mtry = 30, min_n = 39, trees = 1997) %>% 
+  set_engine("ranger", importance = "impurity") %>% 
+  set_mode("classification")
+
+# Create final workflow
+rf_16_workflow_wfemi <- workflow() %>% 
+ add_model(rf_16) %>% 
+  add_recipe(cll_rec)
+
+# Last fit
+rf_16_fit_wfemi <- last_fit(rf_16_workflow_wfemi, split = df_split)
+rf_16_fit_wfemi %>% collect_metrics() %>% select(1,3)
+```
+
+rf_16_fit_wfemi %>% extract_fit_parsnip() %>% vip(num_features = 25)
+
+## RF 24
+```{r}
+rf_24 <- 
+  rand_forest(mtry = 46, min_n = 3, trees = 1094) %>% 
+  set_engine("ranger", importance = "impurity") %>% 
+  set_mode("classification")
+
+# Create final workflow
+rf_24_workflow_wfemi <- workflow() %>% 
+ add_model(rf_24) %>% 
+  add_recipe(cll_rec)
+
+# Last fit
+rf_24_fit_wfemi <- last_fit(rf_24_workflow_wfemi, split = df_split)
+rf_24_fit_wfemi %>% collect_metrics() %>% select(1,3)
+```
+
+rf_24_fit_wfemi %>% extract_fit_parsnip() %>% vip(num_features = 25)
+
+
+```{r}
+cll_pred_wfemi <-
+  df_test %>%
+  bind_cols(predict(cll_st_wfemi,.,type = "prob"))
+
+bla = cll_pred_wfemi %>% select(170,173)
+
+bla %>% ggplot((aes(x=INFEC_after_diag, y=.pred_1, fill = INFEC_after_diag))) + 
+  geom_boxplot() + 
+  geom_jitter(color="black", size=0.4, alpha=0.9) +
+  theme(
+      legend.position="none",
+      plot.title = element_text(size=11)
+    ) +
+    ggtitle("Predicted risk of stack by event") +
+  ylab("Predicted risk") +
+  xlab("True class")
+  
+  
+```
+
+
+```{r}
+mlp_22_fit_wfemi$.predictions %>% as.data.frame() %>% ggplot((aes(x=INFEC_after_diag, y=.pred_1, fill = INFEC_after_diag))) + 
+  geom_boxplot() + 
+  geom_jitter(color="black", size=0.4, alpha=0.9) +
+  theme(
+      legend.position="none",
+      plot.title = element_text(size=11)
+    ) +
+    ggtitle("Predicted risk of stack by event") +
+  ylab("Predicted risk") +
+  xlab("True class")
+```
+
+```{r}
+rf_16_fit_wfemi$.predictions %>% as.data.frame() %>% ggplot((aes(x=INFEC_after_diag, y=.pred_1, fill = INFEC_after_diag))) + 
+  geom_boxplot() + 
+  geom_jitter(color="black", size=0.4, alpha=0.9) +
+  theme(
+      legend.position="none",
+      plot.title = element_text(size=11)
+    ) +
+    ggtitle("Predicted risk of stack by event") +
+  ylab("Predicted risk") +
+  xlab("True class")
+```
+
+```{r}
+rf_24_fit_wfemi$.predictions %>% as.data.frame() %>% ggplot((aes(x=INFEC_after_diag, y=.pred_1, fill = INFEC_after_diag))) + 
+  geom_boxplot() + 
+  geom_jitter(color="black", size=0.4, alpha=0.9) +
+  theme(
+      legend.position="none",
+      plot.title = element_text(size=11)
+    ) +
+    ggtitle("Predicted risk of stack by event") +
+  ylab("Predicted risk") +
+  xlab("True class")
+```
+
+```{r}
+mlp_22_fit_wfemi$.predictions %>% as.data.frame() %>% ggplot((aes(x=.pred_1, fill = INFEC_after_diag))) + 
+  geom_histogram(binwidth = 0.025, position = "fill") +
+  theme(
+      legend.position="none",
+      plot.title = element_text(size=11)
+    ) +
+    ggtitle("Predicted risk of stack by event") +
+  ylab("Predicted risk") +
+  xlab("True class")
+```
+
+```{r}
+rf_24_fit_wfemi$.predictions %>% as.data.frame() %>% ggplot((aes(x=.pred_1, fill = INFEC_after_diag))) + 
+  geom_histogram(binwidth = 0.01, position = "fill") +
+  theme(
+      legend.position="none",
+      plot.title = element_text(size=11)
+    ) +
+    ggtitle("Predicted risk of stack by event") +
+  ylab("Predicted risk") +
+  xlab("True class")
+```
+
+```{r}
+rf_16_fit_wfemi$.predictions %>% as.data.frame() %>% ggplot((aes(x=.pred_1, fill = INFEC_after_diag))) + 
+  geom_histogram(binwidth = 0.01, position = "fill") +
+  theme(
+      legend.position="none",
+      plot.title = element_text(size=11)
+    ) +
+    ggtitle("Predicted risk of stack by event") +
+  ylab("Predicted risk") +
+  xlab("True class")
+```
+
+```{r}
+rf_24_fit_wfemi$.predictions %>% as.data.frame() %>% ggplot((aes(x=.pred_1, fill = INFEC_after_diag))) + 
+  geom_histogram(binwidth = 0.01, position = "fill") +
+  theme(
+      legend.position="none",
+      plot.title = element_text(size=11)
+    ) +
+    ggtitle("Predicted risk of stack by event") +
+  ylab("Predicted risk") +
+  xlab("True class")
+```
+
+```{r}
+mlp_22_fit_wfemi$.predictions %>% as.data.frame() %>% ggplot((aes(x=.pred_1, fill = INFEC_after_diag))) + 
+  geom_histogram(binwidth = 0.025, position = "fill") +
+  theme(
+      legend.position="none",
+      plot.title = element_text(size=11)
+    ) +
+    ggtitle("Predicted risk of stack by event") +
+  ylab("Predicted risk") +
+  xlab("True class")
+```
+
+```{r}
+rf_24_fit_wfemi$.predictions %>% as.data.frame() %>% ggplot((aes(x=.pred_1, fill = INFEC_after_diag))) + 
+  geom_histogram(binwidth = 0.01, position = "stack") +
+  theme(
+      legend.position="none",
+      plot.title = element_text(size=11)
+    ) +
+    ggtitle("Predicted risk of stack by event") +
+  ylab("Predicted risk") +
+  xlab("True class")
+```
+
+```{r}
+rf_16_fit_wfemi$.predictions %>% as.data.frame() %>% ggplot((aes(x=.pred_1, fill = INFEC_after_diag))) + 
+  geom_histogram(binwidth = 0.01, position = "stack") +
+  theme(
+      legend.position="none",
+      plot.title = element_text(size=11)
+    ) +
+    ggtitle("Predicted risk of stack by event") +
+  ylab("Predicted risk") +
+  xlab("True class")
+```
+
+```{r}
+rf_24_fit_wfemi$.predictions %>% as.data.frame() %>% ggplot((aes(x=.pred_1, fill = INFEC_after_diag))) + 
+  geom_histogram(binwidth = 0.01, position = "stack") +
+  theme(
+      legend.position="none",
+      plot.title = element_text(size=11)
+    ) +
+    ggtitle("Predicted risk of stack by event") +
+  ylab("Predicted risk") +
+  xlab("True class")
+```
