@@ -768,6 +768,13 @@ autoplot(mars_auc_wfe)
 # Last model
 This section demonstrates how to retrain the model on the combined training and validation set, using the optimal tuning parameters, and evaluating the performance on the test set.
 
+## Metrics to report
+```{r}
+multi_metric = metric_set(accuracy,mcc, bal_accuracy, detection_prevalence,f_meas,j_index,kap,
+                          npv, ppv, sensitivity,specificity, average_precision,classification_cost,
+                          gain_capture,mn_log_loss,pr_auc,roc_auc)
+```
+
 ## LR
 ```{r}
 # Create model with best parameter
@@ -780,8 +787,8 @@ lr_final_workflow_wfe <- workflow() %>%
   add_recipe(cll_rec)
 
 # Last fit
-lr_last_fit_wfe <- last_fit(lr_final_workflow_wfe, split = df_split)
-lr_last_fit_wfe %>% collect_metrics()
+lr_last_fit_wfe <- last_fit(lr_final_workflow_wfe, split = df_split, metrics = multi_metric)
+lr_last_fit_wfe %>% collect_metrics() %>% select(1,3)
 ```
 
 We can print the most important features used for the prediction using the variable importance function. Vip depends on the type of model, so we include the type of variable importance score. For the EN model, which is a paramatric model, we get the model coefficients.
@@ -801,8 +808,8 @@ rf_final_workflow_wfe <- workflow() %>%
   add_recipe(cll_rec)
 
 # Last fit
-rf_last_fit_wfe <- last_fit(rf_final_workflow_wfe, split = df_split)
-rf_last_fit_wfe %>% collect_metrics()
+rf_last_fit_wfe <- last_fit(rf_final_workflow_wfe, split = df_split, metrics = multi_metric)
+rf_last_fit_wfe %>% collect_metrics() %>% select(1,3)
 ```
 
 
@@ -821,8 +828,8 @@ svm_final_workflow_wfe <- workflow() %>%
   add_recipe(cll_rec)
 
 # Last fit
-svm_last_fit_wfe <- last_fit(svm_final_workflow_wfe, split = df_split)
-svm_last_fit_wfe %>% collect_metrics()
+svm_last_fit_wfe <- last_fit(svm_final_workflow_wfe, split = df_split, metrics= multi_metric)
+svm_last_fit_wfe %>% collect_metrics() %>% select(1,3)
 ```
 
 
@@ -842,8 +849,8 @@ svm_r_final_workflow_wfe <- workflow() %>%
   add_recipe(cll_rec)
 
 # Last fit
-svm_r_last_fit_wfe <- last_fit(svm_r_final_workflow_wfe, split = df_split)
-svm_r_last_fit_wfe %>% collect_metrics()
+svm_r_last_fit_wfe <- last_fit(svm_r_final_workflow_wfe, split = df_split, metrics = multi_metric)
+svm_r_last_fit_wfe %>% collect_metrics() %>% select(1,3)
 ```
 
 
@@ -862,8 +869,8 @@ xgb_final_workflow_wfe <- workflow() %>%
   add_recipe(cll_rec)
 
 # Last fit
-xgb_last_fit_wfe <- last_fit(xgb_final_workflow_wfe, split = df_split)
-xgb_last_fit_wfe %>% collect_metrics()
+xgb_last_fit_wfe <- last_fit(xgb_final_workflow_wfe, split = df_split, metrics = multi_metric)
+xgb_last_fit_wfe %>% collect_metrics() %>% select(1,3)
 ```
 
 
@@ -882,8 +889,8 @@ mlp_final_workflow_wfe <- workflow() %>%
   add_recipe(cll_rec)
 
 # Last fit
-mlp_last_fit_wfe <- last_fit(mlp_final_workflow_wfe, split = df_split)
-mlp_last_fit_wfe %>% collect_metrics()
+mlp_last_fit_wfe <- last_fit(mlp_final_workflow_wfe, split = df_split, metrics = multi_metric)
+mlp_last_fit_wfe %>% collect_metrics() %>% select(1,3)
 ```
 
 ##Bagged trees
@@ -904,8 +911,8 @@ bag_final_workflow_wfe <- workflow() %>%
   add_recipe(cll_rec)
 
 # Last fit
-bag_last_fit_wfe <- last_fit(bag_final_workflow_wfe, split = df_split)
-bag_last_fit_wfe %>% collect_metrics()
+bag_last_fit_wfe <- last_fit(bag_final_workflow_wfe, split = df_split, metrics = multi_metric)
+bag_last_fit_wfe %>% collect_metrics() %>% select(1,3)
 ```
 
 
@@ -925,8 +932,8 @@ nb_final_workflow_wfe <- workflow() %>%
   add_recipe(cll_rec)
 
 # Last fit
-nb_last_fit_wfe <- last_fit(nb_final_workflow_wfe, split = df_split)
-nb_last_fit_wfe %>% collect_metrics()
+nb_last_fit_wfe <- last_fit(nb_final_workflow_wfe, split = df_split, metrics = multi_metric)
+nb_last_fit_wfe %>% collect_metrics()%>% select(1,3)
 ```
 
 
@@ -948,8 +955,8 @@ dec_final_workflow_wfe <- workflow() %>%
   add_recipe(cll_rec)
 
 # Last fit
-dec_last_fit_wfe <- last_fit(dec_final_workflow_wfe, split = df_split)
-dec_last_fit_wfe %>% collect_metrics()
+dec_last_fit_wfe <- last_fit(dec_final_workflow_wfe, split = df_split, metrics = multi_metric)
+dec_last_fit_wfe %>% collect_metrics() %>% select(1,3)
 ```
 
 ## MARS
@@ -970,8 +977,8 @@ mars_final_workflow_wfe <- workflow() %>%
   add_recipe(cll_rec)
 
 # Last fit
-mars_last_fit_wfe <- last_fit(mars_final_workflow_wfe, split = df_split)
-mars_last_fit_wfe %>% collect_metrics()
+mars_last_fit_wfe <- last_fit(mars_final_workflow_wfe, split = df_split, metrics = multi_metric)
+mars_last_fit_wfe %>% collect_metrics() %>% select(1,3)
 ```
 
 # Create stack
@@ -1011,6 +1018,24 @@ yardstick::roc_auc(
   truth = INFEC_after_diag,
   contains(".pred_1")
 )
+
+cll_pred_wfe %>% 
+  pr_auc(INFEC_after_diag, .pred_1)
+
+cll_pred_wfe %>% 
+  average_precision(INFEC_after_diag, .pred_1)
+
+cll_pred_wfe %>% 
+  classification_cost(INFEC_after_diag, .pred_1)
+
+cll_pred_wfe %>% 
+  gain_capture(INFEC_after_diag, .pred_1)
+
+cll_pred_wfe %>% 
+  pr_auc(INFEC_after_diag, .pred_1)
+
+cll_pred_wfe %>% 
+  mn_log_loss(INFEC_after_diag, .pred_1)
 ```
 
 ## compare with individual models
@@ -1323,33 +1348,131 @@ cll_st_cp
 lr_clp = classifierplots::classifierplots(df_lr_wfe$INFEC_after_diag, df_lr_wfe$.pred_1)
 lr_clp
 
+dir.create("plot_wfeli_lr")
+classifierplots::classifierplots_folder(
+  test.y=df_lr_wfe$INFEC_after_diag,
+  pred.prob = df_lr_wfe$.pred_1,
+  folder = "plot_wfeli_lr",
+  height = 250,
+  width = 250
+)
+
 rf_clp = classifierplots::classifierplots(df_rf_wfe$INFEC_after_diag, df_rf_wfe$.pred_1)
 rf_clp
+
+dir.create("plot_wfeli_rf")
+classifierplots::classifierplots_folder(
+  test.y=df_rf_wfe$INFEC_after_diag,
+  pred.prob = df_rf_wfe$.pred_1,
+  folder = "plot_wfeli_rf",
+  height = 250,
+  width = 250
+)
 
 svm_clp = classifierplots::classifierplots(df_svm_wfe$INFEC_after_diag, df_svm_wfe$.pred_1)
 svm_clp
 
+dir.create("plot_wfeli_svm")
+classifierplots::classifierplots_folder(
+  test.y=df_svm_wfe$INFEC_after_diag,
+  pred.prob = df_svm_wfe$.pred_1,
+  folder = "plot_wfeli_svm",
+  height = 250,
+  width = 250
+)
+
 svm_r_clp = classifierplots::classifierplots(df_svm_r_wfe$INFEC_after_diag, df_svm_r_wfe$.pred_1)
 svm_r_clp
+
+dir.create("plot_wfeli_svm_r")
+classifierplots::classifierplots_folder(
+  test.y=df_svm_r_wfe$INFEC_after_diag,
+  pred.prob = df_svm_r_wfe$.pred_1,
+  folder = "plot_wfeli_svm_r",
+  height = 250,
+  width = 250
+)
 
 xgb_clp = classifierplots::classifierplots(df_xgb_wfe$INFEC_after_diag, df_xgb_wfe$.pred_1)
 xgb_clp
 
+dir.create("plot_wfeli_xgb")
+classifierplots::classifierplots_folder(
+  test.y=df_xgb_wfe$INFEC_after_diag,
+  pred.prob = df_xgb_wfe$.pred_1,
+  folder = "plot_wfeli_xgb",
+  height = 250,
+  width = 250
+)
+
 nb_clp = classifierplots::classifierplots(df_nb_wfe$INFEC_after_diag, df_nb_wfe$.pred_1)
 nb_clp
+
+dir.create("plot_wfeli_nb")
+classifierplots::classifierplots_folder(
+  test.y=df_nb_wfe$INFEC_after_diag,
+  pred.prob = df_nb_wfe$.pred_1,
+  folder = "plot_wfeli_nb",
+  height = 250,
+  width = 250
+)
 
 mlp_clp = classifierplots::classifierplots(df_mlp_wfe$INFEC_after_diag, df_mlp_wfe$.pred_1)
 mlp_clp
 
+dir.create("plot_wfeli_mlp")
+classifierplots::classifierplots_folder(
+  test.y=df_mlp_wfe$INFEC_after_diag,
+  pred.prob = df_mlp_wfe$.pred_1,
+  folder = "plot_wfeli_mlp",
+  height = 250,
+  width = 250
+)
+
 bag_clp = classifierplots::classifierplots(df_bag_wfe$INFEC_after_diag, df_bag_wfe$.pred_1)
 bag_clp
 
+
+dir.create("plot_wfeli_bag")
+classifierplots::classifierplots_folder(
+  test.y=df_bag_wfe$INFEC_after_diag,
+  pred.prob = df_bag_wfe$.pred_1,
+  folder = "plot_wfeli_bag",
+  height = 250,
+  width = 250
+)
 dec_clp = classifierplots::classifierplots(df_dec_wfe$INFEC_after_diag, df_dec_wfe$.pred_1)
 dec_clp
+
+dir.create("plot_wfeli_dec")
+classifierplots::classifierplots_folder(
+  test.y=df_dec_wfe$INFEC_after_diag,
+  pred.prob = df_dec_wfe$.pred_1,
+  folder = "plot_wfeli_dec",
+  height = 250,
+  width = 250
+)
 
 mars_clp = classifierplots::classifierplots(df_mars_wfe$INFEC_after_diag, df_mars_wfe$.pred_1)
 mars_clp
 
+dir.create("plot_wfeli_mars")
+classifierplots::classifierplots_folder(
+  test.y=df_mars_wfe$INFEC_after_diag,
+  pred.prob = df_mars_wfe$.pred_1,
+  folder = "plot_wfeli_mars",
+  height = 250,
+  width = 250
+)
+
 cll_st_clp = classifierplots::classifierplots(df_cll_st_wfe$INFEC_after_diag, df_cll_st_wfe$.pred_1)
 cll_st_clp
 
+dir.create("plot_wfeli_cll_st")
+classifierplots::classifierplots_folder(
+  test.y=df_cll_st_wfe$INFEC_after_diag,
+  pred.prob = df_cll_st_wfe$.pred_1,
+  folder = "plot_wfeli_cll_st",
+  height = 250,
+  width = 250
+)
