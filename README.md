@@ -9,4 +9,6 @@ The arcive folder contains old code bits
 The pretrained folder contains the same workflow as the main analysis, but calls in the models trained on the synthetic data which are avaliable at:
 https://drive.google.com/drive/folders/1Nzkqv1q6rSgvtbYQiHYQohq42eGBICA7
 
+The the misc folder contains miscellaneous codes bits mainly used in vizualisation
+
 The folder experimental contains code under development
